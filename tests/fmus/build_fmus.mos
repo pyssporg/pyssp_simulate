@@ -1,0 +1,20 @@
+// Build the TestFMUs models as FMI 2.0 co-simulation FMUs with static
+// binaries (no runtime dependencies on the build host). Run omc with the
+// working directory set to the folder that holds TestFMUs.mo; the Python
+// wrapper tests/generate_fmus.py does exactly that.
+//
+// Notes on the OpenModelica 1.26.1 scripting API:
+//   * the FMU flavour argument is named fmuType (me | cs | me_cs), and
+//   * platforms is a String array, so the static build needs
+//     platforms={"static"} rather than platforms="static".
+// The default file name prefix already yields RampSource.fmu and
+// Integrator.fmu, so no fileNamePrefix override is required.
+
+loadFile("TestFMUs.mo");
+getErrorString();
+
+buildModelFMU(TestFMUs.RampSource, version="2.0", fmuType="cs", platforms={"static"});
+getErrorString();
+
+buildModelFMU(TestFMUs.Integrator, version="2.0", fmuType="cs", platforms={"static"});
+getErrorString();

@@ -96,16 +96,19 @@ class TestPrepareRuntimeSsp:
             assert runtime.ssd_name == "SystemStructure.ssd"
             assert runtime.root_system == "system"
             with zipfile.ZipFile(runtime.archive) as archive:
-                assert "SystemStructure.ssd" in archive.namelist()
-                assert "resources/BouncingBall.fmu" in archive.namelist()
+                names = archive.namelist()
+                assert "SystemStructure.ssd" in names
+                assert "resources/RampSource.fmu" in names
+                assert "resources/Integrator.fmu" in names
 
     def test_directory_input_repackages_unpacked_fmus(self, ssp_dir: Path):
         with prepare_runtime_ssp(ssp_dir) as runtime:
             with zipfile.ZipFile(runtime.archive) as archive:
                 names = archive.namelist()
-            assert "resources/BouncingBall.fmu" in names
+            assert "resources/RampSource.fmu" in names
+            assert "resources/Integrator.fmu" in names
             assert not any(
-                name == "resources/BouncingBall/modelDescription.xml" for name in names
+                name == "resources/Integrator/modelDescription.xml" for name in names
             )
             assert runtime.root_system == "system"
 

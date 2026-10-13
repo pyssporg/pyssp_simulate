@@ -5,6 +5,7 @@ Subcommands:
 * ``run`` -- simulate an SSP package with one backend.
 * ``backends`` -- list the registered backends and their availability.
 * ``compare`` -- compare result CSVs produced by ``run`` (or any engine).
+* ``run-all`` -- run every permutation described by a JSON config file.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from pyssp_simulate.interface import (
     get_simulator_class,
     simulate,
 )
+from pyssp_simulate.permutations import load_permutation_config, run_permutations
 from pyssp_simulate.result import SimulationResult
 from pyssp_simulate.spec import SimulationSpec
 
@@ -77,6 +79,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     compare_parser.add_argument(
         "--json", action="store_true", help="print the summary as JSON"
+    )
+
+    run_all_parser = subparsers.add_parser(
+        "run-all", help="Run every permutation described by a JSON config file"
+    )
+    run_all_parser.add_argument(
+        "config", help="path to the permutation config JSON file"
     )
 
     return parser
@@ -148,6 +157,49 @@ def _compare_command(args: argparse.Namespace) -> int:
     return 1
 
 
+def _run_all_command(args: argparse.Namespace) -> int:
+    config = load_permutation_config(args.config)
+    runs = run_permutations(config)
+
+    if not runs:
+        print("error: the config produced zero permutations", file=sys.stderr)
+        return 1
+
+    compared = passed = failed = 0
+    for index, run in enumerate(runs):
+        backends = ",".join(run.results) or "none"
+        skipped = ",".join(run.skipped) or "none"
+        if run.report is not None:
+            compared += 1
+            max_error = max(
+                (pair.max_abs_error for pair in run.report.pairs), default=0.0
+            )
+            error_text = f"max_abs_error={max_error:.6g}"
+        else:
+            error_text = "max_abs_error=n/a"
+        if run.passed is True:
+            passed += 1
+            status = "PASS"
+        elif run.passed is False or not run.results:
+            failed += 1
+            status = "FAIL"
+        else:
+            status = "ok"
+        print(
+            f"perm_{index:04d}: backends={backends} skipped={skipped} "
+            f"{error_text} [{status}]"
+        )
+
+    print(
+        f"total permutations={len(runs)}, compared={compared}, "
+        f"passed={passed}, failed={failed}"
+    )
+    if failed:
+        print(f"error: {failed} of {len(runs)} permutation(s) failed", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -156,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         "run": _run_command,
         "backends": _backends_command,
         "compare": _compare_command,
+        "run-all": _run_all_command,
     }
     try:
         return handlers[args.command](args)

@@ -7,6 +7,8 @@ Public API:
 * :class:`SimulationResult` -- normalized result (structured NumPy array).
 * :func:`compare` / :class:`ComparisonReport` -- cross-engine comparison.
 * :func:`available_backends` / :func:`get_simulator` -- backend registry.
+* :class:`PermutationConfig` / :func:`run_permutations` -- batch sweeps
+  described by a JSON config.
 
 Example::
 
@@ -35,6 +37,13 @@ from pyssp_simulate.interface import (
     simulate,
     simulate_all,
 )
+from pyssp_simulate.permutations import (
+    ComparisonSettings,
+    PermutationConfig,
+    PermutationRun,
+    load_permutation_config,
+    run_permutations,
+)
 from pyssp_simulate.result import (
     TIME_SIGNAL,
     SimulationResult,
@@ -50,7 +59,10 @@ __all__ = [
     "BACKEND_MODULES",
     "BackendNotAvailableError",
     "ComparisonReport",
+    "ComparisonSettings",
     "PairReport",
+    "PermutationConfig",
+    "PermutationRun",
     "SimulationResult",
     "SimulationSpec",
     "SignalComparison",
@@ -62,7 +74,9 @@ __all__ = [
     "compare",
     "compare_pair",
     "get_simulator",
+    "load_permutation_config",
     "read_result_csv",
+    "run_permutations",
     "simulate",
     "simulate_all",
     "spec_summary",

@@ -140,7 +140,7 @@ OMSimulator's `model.root.` are stripped — so results from different engines
 can be compared directly.
 
 ```python
-result["BouncingBall.h"]   # one signal as a NumPy array
+result["Integrator.y"]   # one signal as a NumPy array
 result.time                # the time grid
 result.signals             # all signal names, "time" excluded
 len(result)                # number of samples
@@ -194,6 +194,42 @@ report.summary()                     # dict summary for logging/JSON
 A signal passes when its `max_abs_error` is at most
 `atol + rtol * max(|reference_min|, |reference_max|)`.
 
+## Permutation runs
+
+A permutation config is a JSON file naming one SSP package and the sets of
+simulation parameters to sweep. Each permutation field accepts a scalar, a
+list, or `null`, and the executed runs are the cartesian product, each run
+with every configured backend:
+
+```json
+{
+    "ssp": "model.ssp",
+    "backends": ["fmpy", "omsimulator"],
+    "stop_time": [1.0, 10.0],
+    "step_size": [0.001, 0.01],
+    "compare": {"atol": 1e-3, "rtol": 0.0},
+    "output_dir": "runs"
+}
+```
+
+This describes 4 permutations (2 stop times × 2 step sizes) on two backends.
+Only `ssp` is required, unknown keys are rejected (typo protection), and
+backends whose engine is not installed are skipped with the reason recorded
+on the run.
+
+```python
+from pyssp_simulate import load_permutation_config, run_permutations
+
+runs = run_permutations(load_permutation_config("sweep.json"))
+for run in runs:
+    print(run.summary()["passed"])   # True/False, or None without a comparison
+```
+
+With `output_dir` set, permutation `i` writes `runs/perm_<i>/<backend>.csv`
+for every backend that ran, a `spec.json` manifest, and — when two or more
+backends produced results — the cross-backend metrics as
+`runs/perm_<i>/metrics.csv`.
+
 ## Backend registry
 
 ```python
@@ -215,13 +251,16 @@ The package installs a `pyssp-simulate` console script.
 $ pyssp-simulate run model.ssp --backend fmpy --stop-time 10 --step-size 0.001 --output result.csv
 $ pyssp-simulate backends
 $ pyssp-simulate compare fmpy.csv omsimulator.csv --atol 1e-3 --output metrics.csv
+$ pyssp-simulate run-all sweep.json
 ```
 
 `run` simulates one SSP package (with `--backend auto` by default) and writes
 the result CSV given `--output`. `backends` lists every registered backend and
 its availability. `compare` takes two or more result CSVs, using the first as
 the reference, and exits with code 0 when all signals pass the tolerance and 1
-otherwise; `--json` prints the summary as JSON.
+otherwise; `--json` prints the summary as JSON. `run-all` executes every
+permutation of a config file, printing one line per run and a final summary,
+and exits nonzero when any compared run fails.
 
 ## Development
 
@@ -231,15 +270,23 @@ pytest
 ruff check src tests
 ```
 
-Backends whose engines are not installed are skipped automatically. The
-integration tests build an SSP package around the BouncingBall FMU from the
-[Reference-FMUs](https://github.com/modelica/Reference-FMUs) project;
-`tests/data/BouncingBall.fmu` is redistributed under that project's license
-(the 2-clause BSD license, see
-[LICENSE.txt](https://github.com/modelica/Reference-FMUs/blob/main/LICENSE.txt)).
-The fixture package is assembled with pyssp_standard (a dev dependency), and
-its analytic free-fall solution gives the tests an engine-independent
-reference.
+Backends whose engines are not installed are skipped automatically.
+
+The integration tests use two primitive FMUs — a ramp source (`y = t`) and
+an integrator (`der(y) = u`) wired together — compiled at test time by the
+[OpenModelica](https://openmodelica.org) compiler, so no prebuilt binaries
+live in the repository. The analytic solutions (`t` and `t²/2`) give the
+tests an engine-independent reference. The fixture SSP is assembled with
+pyssp_standard (a dev dependency). If `omc` is not on your `PATH`, the
+integration tests skip; to prepare the FMUs once and reuse them:
+
+```bash
+python tests/generate_fmus.py            # builds tests/fmus/build/*.fmu
+export PYSSP_SIMULATE_TEST_FMU_DIR=tests/fmus/build
+```
+
+CI installs the OpenModelica compiler from the project's official apt
+repository before running the tests.
 
 ## License
 

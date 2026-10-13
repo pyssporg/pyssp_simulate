@@ -58,4 +58,4 @@ def test_simulate_auto_uses_fmpy(tmp_path: Path, ssp_archive: Path):
     result = simulate(spec, backend="auto")
     # fmpy is a core dependency, so auto always resolves to it at minimum.
     assert result.backend == "fmpy"
-    assert "BouncingBall.h" in result.signals
+    assert "Integrator.y" in result.signals

@@ -6,6 +6,12 @@
 # (see tests/test_backends.py), so a failed install must not fail the job.
 # ssp4sim (unstable wheels) and cosim (not pip-installable) are not
 # installed at all; their tests skip themselves too.
+#
+# OpenModelica is installed from the project's official apt repository
+# (Ubuntu does not ship it): the test fixtures compile their FMUs with
+# omc at test time (see tests/generate_fmus.py), so the compiler must
+# be present. If the installation ever fails on a runner the job fails
+# with it, which is the intended hard error.
 
 name: Tests
 
@@ -50,5 +56,17 @@ jobs:
           pip install -e ".[dev]"
       - name: Try to install OMSimulator (optional backend)
         run: pip install "OMSimulator>=3.0.0.post115" || echo "::warning::OMSimulator install failed; its tests will be skipped"
+      - name: Install OpenModelica (compiles the test FMUs)
+        # Official instructions from https://openmodelica.org/download/download-linux.
+        # omc without recommends is enough: the tests only run the compiler.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl gnupg
+          curl -fsSL https://build.openmodelica.org/apt/openmodelica.asc | \
+            sudo gpg --dearmor -o /usr/share/keyrings/openmodelica-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openmodelica-keyring.gpg] https://build.openmodelica.org/apt $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+            sudo tee /etc/apt/sources.list.d/openmodelica.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends omc
       - name: Run tests
         run: python -m pytest

@@ -56,6 +56,10 @@ cover/
 *.mo
 *.pot
 
+# Modelica sources are Modelica code, not gettext catalogs; keep the
+# test fixture sources trackable despite the *.mo rule above.
+!tests/fmus/*.mo
+
 # Django stuff:
 *.log
 local_settings.py

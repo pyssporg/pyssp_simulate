@@ -1,14 +1,14 @@
-"""Integration tests: every backend runs the BouncingBall fixture.
+"""Integration tests: every backend runs the generated ramp-to-integrator chain.
 
-BouncingBall (Reference-FMUs, FMI 2.0) drops from 1 m with g = 9.81,
-so before the first bounce (t < ~0.45 s):
+The fixture SSP (built at test time around omc-generated FMUs; see
+``tests/conftest.py``) connects ``RampSource.y`` to ``Integrator.u``:
 
-    h(t) = 1 - 0.5 * g * t²
-    v(t) = -g * t
+    RampSource:  y = t
+    Integrator:  der(y) = u, y(0) = 0   =>   y = t²/2
 
-Each backend runs to t = 0.4 s with step 0.001 s; the last recorded
-sample must match the analytic solution, and all backends must agree
-with each other within a loose co-simulation tolerance.
+Each backend runs to t = 1 s with step 0.001 s; the recorded signals
+must match the analytic solutions, and all backends must agree with
+each other within a loose co-simulation tolerance.
 """
 
 from __future__ import annotations
@@ -17,16 +17,28 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from tests.conftest import START_TIME, STEP_SIZE, STOP_TIME, analytic_height
+from tests.conftest import (
+    START_TIME,
+    STEP_SIZE,
+    STOP_TIME,
+    analytic_integrator,
+    analytic_source,
+)
 
 from pyssp_simulate import SimulationSpec, available_backends, simulate, simulate_all
 from pyssp_simulate.compare import compare
 from pyssp_simulate.interface import get_simulator
 
-G = 9.81
-HEIGHT_ATOL = 2e-2
-VELOCITY_ATOL = 5e-2
-CROSS_BACKEND_ATOL = 5e-2
+# fmpy's SSP master records every sample after stepping, i.e. the value
+# from t + h lands under the timestamp t, while the other engines record
+# aligned samples (see tests/conftest.py). The chain's signals change at
+# a rate of at most 1, so a one-step recording offset is bounded by
+# STEP_SIZE; the source check therefore needs STEP_SIZE of headroom and
+# the integrator's explicit-Euler error (t*h/2 = 5e-4 at t = 1 s)
+# dominates its tolerance instead.
+SOURCE_ATOL = STEP_SIZE + 1e-6
+INTEGRATOR_ATOL = 1e-3
+CROSS_BACKEND_ATOL = 5e-3
 
 
 def _backend_ready(name: str) -> bool:
@@ -35,12 +47,12 @@ def _backend_ready(name: str) -> bool:
 
 
 def assert_matches_analytic(result):
-    assert "BouncingBall.h" in result.signals, result.signals
-    assert "BouncingBall.v" in result.signals
+    assert "RampSource.y" in result.signals, result.signals
+    assert "Integrator.y" in result.signals
 
     time = result.time
-    height = result["BouncingBall.h"]
-    velocity = result["BouncingBall.v"]
+    source = result["RampSource.y"]
+    integrator = result["Integrator.y"]
     assert len(time) > 10
     # Engines record at different offsets (start vs. end of a step), so
     # the first and last samples may sit up to one step outside the
@@ -48,8 +60,10 @@ def assert_matches_analytic(result):
     assert time[0] == pytest.approx(START_TIME, abs=STEP_SIZE + 1e-9)
     assert time[-1] == pytest.approx(STOP_TIME, abs=STEP_SIZE + 1e-9)
 
-    np.testing.assert_allclose(height, analytic_height(time), atol=HEIGHT_ATOL)
-    np.testing.assert_allclose(velocity, -G * time, atol=VELOCITY_ATOL)
+    np.testing.assert_allclose(source, analytic_source(time), atol=SOURCE_ATOL)
+    np.testing.assert_allclose(
+        integrator, analytic_integrator(time), atol=INTEGRATOR_ATOL
+    )
 
 
 @pytest.fixture()
@@ -84,7 +98,7 @@ def test_fmpy_backend_writes_result_file(spec, tmp_path: Path):
     from pyssp_simulate import SimulationResult
 
     reloaded = SimulationResult.from_csv(output, backend="fmpy")
-    np.testing.assert_allclose(reloaded["BouncingBall.h"], result["BouncingBall.h"])
+    np.testing.assert_allclose(reloaded["Integrator.y"], result["Integrator.y"])
 
 
 @pytest.mark.skipif(not _backend_ready("omsimulator"), reason="OMSimulator not installed")
@@ -125,7 +139,7 @@ def test_cross_backend_agreement(backend, spec_kwargs, ssp_archive: Path):
     reference = simulate(SimulationSpec(ssp=ssp_archive, **spec_kwargs), backend="fmpy")
     candidate = simulate(SimulationSpec(ssp=ssp_archive, **spec_kwargs), backend=backend)
 
-    report = compare([reference, candidate], signals=["BouncingBall.h"])
+    report = compare([reference, candidate], signals=["Integrator.y"])
     assert report.pairs[0].max_abs_error < CROSS_BACKEND_ATOL
     assert report.pairs[0].passed(atol=CROSS_BACKEND_ATOL)
 
