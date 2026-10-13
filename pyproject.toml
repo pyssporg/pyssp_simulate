@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyssp_simulate"
+version = "0.1.0"
+description = "Simulate SSP (System Structure and Parameterization) packages through a common interface and compare results across simulation engines."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "pyssporg" }]
+requires-python = ">=3.10"
+keywords = ["SSP", "FMI", "FMU", "co-simulation", "simulation", "System Structure and Parameterization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+# FMPy installs from PyPI on all platforms and is the default backend,
+# so it ships with the base install. The other backends are optional
+# (see [project.optional-dependencies] and the README).
+dependencies = [
+    "numpy>=1.24",
+    "fmpy>=0.3.20",
+]
+
+[project.optional-dependencies]
+# OMSimulator's sdist downloads binaries at install time; it works on
+# current platforms (e.g. Ubuntu 24.04) but can fail on distributions
+# whose build artifacts are no longer published. See README.
+omsimulator = ["OMSimulator>=3.0.0.post115"]
+all = ["pyssp_simulate[omsimulator]"]
+dev = [
+    "pytest>=7",
+    "ruff",
+    "pyssp-standard>=0.9.1",
+]
+
+[project.scripts]
+pyssp-simulate = "pyssp_simulate.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/pyssporg/pyssp_simulate"
+Repository = "https://github.com/pyssporg/pyssp_simulate"
+Issues = "https://github.com/pyssporg/pyssp_simulate/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyssp_simulate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]

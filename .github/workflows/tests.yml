@@ -1,0 +1,54 @@
+# Lint with ruff and run the test suite on all supported Python versions.
+#
+# OMSimulator is installed on a best-effort basis: its sdist downloads
+# engine binaries at install time and can fail depending on the runner
+# distro. The test suite skips unavailable backends automatically
+# (see tests/test_backends.py), so a failed install must not fail the job.
+# ssp4sim (unstable wheels) and cosim (not pip-installable) are not
+# installed at all; their tests skip themselves too.
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install ruff
+      - name: Lint
+        # Configuration lives in pyproject.toml (line-length 100, E/F/W/I/UP).
+        run: ruff check src tests
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Try to install OMSimulator (optional backend)
+        run: pip install "OMSimulator>=3.0.0.post115" || echo "::warning::OMSimulator install failed; its tests will be skipped"
+      - name: Run tests
+        run: python -m pytest
