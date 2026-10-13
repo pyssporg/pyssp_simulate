@@ -149,9 +149,8 @@ def _compare_command(args: argparse.Namespace) -> int:
         print(f"metrics written to {args.output}")
 
     if report.passed(atol=args.atol, rtol=args.rtol):
-        print(
-            f"PASS (atol={args.atol}, rtol={args.rtol})" if not args.json else ""
-        )
+        if not args.json:
+            print(f"PASS (atol={args.atol}, rtol={args.rtol})")
         return 0
     print(f"FAIL (atol={args.atol}, rtol={args.rtol})")
     return 1

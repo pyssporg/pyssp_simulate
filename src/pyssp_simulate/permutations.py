@@ -1,7 +1,8 @@
 """Batch execution of simulation permutations described by a JSON config.
 
 A *permutation config* is a JSON object naming one SSP package and the
-sets of simulation parameters to sweep. Each permutation field accepts a
+sets of simulation parameters to sweep. Each numeric sweep field
+(``start_time``, ``stop_time``, ``step_size``, ``tolerance``) accepts a
 scalar, a list of values, or ``null``; the executed runs are the cartesian
 product of all the sets, each executed with every configured backend.
 Whenever two or more backends produce a result, the results are compared
@@ -10,7 +11,7 @@ against the first backend that ran (in configured order).
 Full schema -- only ``ssp`` is required, every other key is optional::
 
     {
-        "ssp": "BouncingBall.ssp",
+        "ssp": "model.ssp",
         "backends": ["fmpy", "omsimulator"],
         "start_time": 0.0,
         "stop_time": [0.05, 0.1],
@@ -87,7 +88,9 @@ class ComparisonSettings:
     """Tolerances used to judge cross-backend agreement.
 
     :param atol: absolute tolerance on each signal's max absolute error.
-    :param rtol: relative tolerance, scaled by the reference signal range.
+    :param rtol: relative tolerance, scaled by the reference signal's peak
+        absolute value (see
+        :meth:`~pyssp_simulate.compare.PairReport.passed`).
     """
 
     atol: float = 1e-6

@@ -23,6 +23,16 @@ def test_spec_accepts_directory(tmp_path: Path):
     assert spec.duration == 1.0
 
 
+def test_spec_rejects_nested_ssd_directory(tmp_path: Path):
+    # An SSD below the top level is not a valid unpacked SSP package;
+    # reject it at construction instead of failing at simulate time.
+    nested = tmp_path / "sub"
+    nested.mkdir()
+    (nested / "SystemStructure.ssd").write_text("<ssd/>")
+    with pytest.raises(ValueError, match="top-level .ssd"):
+        SimulationSpec(ssp=tmp_path, start_time=0.0, stop_time=1.0)
+
+
 def test_spec_missing_path_raises(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         SimulationSpec(ssp=tmp_path / "missing.ssp")

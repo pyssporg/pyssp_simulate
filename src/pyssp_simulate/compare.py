@@ -9,7 +9,7 @@ error metrics are computed.
 from __future__ import annotations
 
 import csv
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -71,6 +71,12 @@ class PairReport:
         return float(np.mean(values)) if values else 0.0
 
     def passed(self, atol: float = 1e-6, rtol: float = 0.0) -> bool:
+        """Whether every signal's ``max_abs_error`` is within tolerance.
+
+        A signal passes when ``max_abs_error <= atol + rtol * max(
+        |reference_min|, |reference_max|)`` — the tolerance is scaled by
+        the reference's peak absolute value, not its range.
+        """
         return all(
             item.max_abs_error
             <= atol + rtol * max(abs(item.reference_max), abs(item.reference_min))
@@ -97,6 +103,7 @@ class ComparisonReport:
     common_signals: tuple[str, ...]
 
     def passed(self, atol: float = 1e-6, rtol: float = 0.0) -> bool:
+        """Whether every pair passed (see :meth:`PairReport.passed`)."""
         return all(pair.passed(atol, rtol) for pair in self.pairs)
 
     def summary(self) -> dict:
@@ -196,14 +203,25 @@ def compare_pair(
 
 
 def compare(
-    results: Sequence[SimulationResult], signals: Sequence[str] | None = None
+    results: Sequence[SimulationResult] | Mapping[str, SimulationResult],
+    signals: Sequence[str] | None = None,
 ) -> ComparisonReport:
     """Compare every result against the first one (the reference).
 
-    :param results: two or more simulation results of the same SSP package.
+    :param results: two or more simulation results of the same SSP
+        package. Accepts a sequence, or the mapping returned by
+        :func:`~pyssp_simulate.simulate_all` (its values are used, in
+        the order the backends ran).
     :param signals: optional subset of signals to compare (default: the
         signals present in every result).
+    :raises ValueError: if fewer than two results are given.
+    :raises KeyError: if a requested signal is missing from a result.
     """
+    if isinstance(results, Mapping):
+        results = list(results.values())
+    else:
+        results = list(results)
+
     if len(results) < 2:
         raise ValueError("Comparison needs at least two results")
 

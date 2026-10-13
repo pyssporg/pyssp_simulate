@@ -26,7 +26,8 @@ class OMSimulatorSimulator(Simulator):
     name = "omsimulator"
     install_hint = (
         "Install with `pip install pyssp_simulate[omsimulator]`, or install "
-        "OMSimulator manually (see https://github.com/pyssporg/pyssp_simulate#backends)."
+        "OMSimulator manually (see "
+        "https://github.com/pyssporg/pyssp_simulate#omsimulator)."
     )
 
     @classmethod

@@ -27,9 +27,14 @@ _DROP_PREFIXES = ("root", "fmu", "model")
 def canonicalize_signal(name: str, root_system: str | None = None) -> str:
     """Normalize an engine result column name to ``<component>.<signal>``.
 
-    Strips surrounding whitespace and quotes and removes leading path
-    segments that refer to the root system rather than a component, while
-    always keeping at least two segments for qualified names.
+    Strips surrounding whitespace and quotes, maps the independent variable
+    to ``"time"`` (case-insensitively — engines also emit ``"Time"``), and
+    drops leading path segments that refer to containers rather than
+    components: the literal segments ``root``, ``fmu``, and ``model``, plus
+    ``root_system`` when given (for example OMSimulator's root-system
+    name). At least two segments are always kept for qualified names, so a
+    two-segment name like ``root.y`` is returned unchanged. Empty segments
+    are dropped.
     """
     normalized = name.strip().strip('"').strip("'")
     if normalized.lower() == TIME_SIGNAL:
@@ -71,6 +76,12 @@ def read_result_csv(path: Path | str, root_system: str | None = None) -> np.ndar
 
     The first row must be the header; all values are parsed as floats.
     Header names are canonicalized with :func:`canonicalize_signal`.
+
+    :param path: CSV file to read.
+    :param root_system: root-system name to strip from header names, for
+        engine output that prefixes signals with it (OMSimulator does).
+    :raises ValueError: if the file is empty, has ragged rows, or has
+        duplicate columns after canonicalization.
     """
     path = Path(path)
     with path.open(newline="") as handle:
@@ -115,8 +126,8 @@ class SimulationResult:
     :param backend: name of the backend that produced the result.
     :param spec: the simulation request this result answers, if known.
     :param runtime_s: wall-clock seconds spent simulating, if known.
-    :param artifacts: files produced by the run (config, logs, raw engine
-        output) that were intentionally kept.
+    :param artifacts: files intentionally kept from the run; contents are
+        backend-dependent (see :attr:`artifacts`).
     """
 
     data: np.ndarray
@@ -133,6 +144,7 @@ class SimulationResult:
 
     @property
     def time(self) -> np.ndarray:
+        """The independent variable as a NumPy array."""
         return self.data[TIME_SIGNAL]
 
     def __getitem__(self, signal: str) -> np.ndarray:
@@ -159,6 +171,12 @@ class SimulationResult:
         runtime_s: float | None = None,
         artifacts: tuple[Path, ...] = (),
     ) -> SimulationResult:
+        """Read a result previously written by :meth:`write_csv`.
+
+        Header names are canonicalized; the standard ``model``/``root``/
+        ``fmu`` prefixes are dropped. Use :func:`read_result_csv` directly
+        when a custom root-system prefix must be stripped as well.
+        """
         return cls(
             data=read_result_csv(path),
             backend=backend,

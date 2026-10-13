@@ -14,17 +14,27 @@ class SimulationSpec:
     """Description of one simulation run of an SSP package.
 
     :param ssp: path to an ``.ssp`` archive or to an unpacked SSP directory
-        (a directory containing an ``.ssd`` file, optionally with unpacked
+        (a directory with a top-level ``.ssd`` file, optionally with unpacked
         FMU directories that are repackaged at runtime).
     :param start_time: simulation start time.
     :param stop_time: simulation stop time.
     :param step_size: communication/logging step size. ``None`` lets each
-        backend pick its own default.
-    :param tolerance: optional solver/iteration tolerance.
+        backend pick its own default: OMSimulator and ssp4sim use
+        :meth:`effective_step_size` (``duration / 100``), FMPy its own
+        equivalent default, and cosim reads the step from the SSD (see the
+        cosim backend for the annotation it requires).
+    :param tolerance: optional solver/iteration tolerance. Honored by the
+        OMSimulator and ssp4sim backends (ssp4sim substitutes ``1e-4`` when
+        left at ``None``); FMPy and cosim have no tolerance setting and
+        ignore it.
     :param result_file: optional path the result CSV is written to. When
         ``None``, the result is only kept in memory.
     :param working_dir: optional directory for backend scratch files. When
         ``None``, a temporary directory is used and removed afterwards.
+    :raises FileNotFoundError: if ``ssp`` does not exist.
+    :raises ValueError: if ``ssp`` is a directory without a top-level
+        ``.ssd`` file, if ``stop_time`` is not greater than ``start_time``,
+        or if ``step_size`` or ``tolerance`` is not positive.
     """
 
     ssp: Path
@@ -47,7 +57,7 @@ class SimulationSpec:
         if self.ssp.is_dir() and not _looks_like_ssp_dir(self.ssp):
             raise ValueError(
                 f"Directory {self.ssp} does not look like an unpacked SSP "
-                "(no .ssd file found)"
+                "(no top-level .ssd file found)"
             )
         if self.stop_time <= self.start_time:
             raise ValueError(
@@ -83,7 +93,7 @@ class SimulationSpec:
 
 
 def _looks_like_ssp_dir(path: Path) -> bool:
-    return any(path.glob("*.ssd")) or any(path.rglob("*.ssd"))
+    return any(path.glob("*.ssd"))
 
 
 def spec_summary(spec: SimulationSpec) -> dict:

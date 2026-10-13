@@ -1,19 +1,28 @@
 """cosim backend: the Open Simulation Platform command-line co-simulator.
 
+**Status: experimental.** Validated against cosim v0.8.0 on Linux x86_64;
+the v0.9.0 release binaries require GLIBC >= 2.38, and other platforms
+and versions are untested.
+
 `cosim <https://github.com/open-simulation-platform/cosim-cli>`_ is a
 C++ tool built on libcosim that runs system structures given in OSP or
 SSP format. It is not pip-installable; download a release binary from
-the project's GitHub page and make sure it is on ``PATH`` (or point the
-``COSIM_BINARY`` environment variable at it).
+the project's GitHub page and make sure it is on ``PATH``, or point the
+``COSIM_BINARY`` environment variable at it (when set, ``COSIM_BINARY``
+is used exclusively -- a stale value disables the backend rather than
+falling back to ``PATH``).
 
 Notes:
 
-* cosim has no command-line step-size option; the communication step
-  is taken from the SSD's simulation information (or the tool default),
-  so ``SimulationSpec.step_size`` does not apply to this backend.
-* cosim writes one CSV file per component (with an optional time-stamped
-  suffix) plus ``_metadata.yaml`` files; the backend merges the CSVs
-  into a single result and prefixes signals with the component name.
+* cosim has no command-line step-size option: libcosim reads the master
+  step from an OSP annotation in the SSD (``osp:FixedStepAlgorithm`` /
+  ``baseStepSize``), so ``SimulationSpec.step_size`` does not apply to
+  this backend. Packages without such an annotation fail in cosim itself
+  (v0.8.0 exits with a segfault).
+* cosim writes one CSV file per component, named
+  ``<component>_<timestamp>.csv`` by default, plus ``_metadata.yaml``
+  files; the backend merges the CSVs into a single result and prefixes
+  signals with the component name.
 """
 
 from __future__ import annotations
@@ -97,7 +106,8 @@ class CosimSimulator(Simulator):
 
 
 def resolve_cosim_binary() -> str | None:
-    """Find the cosim executable: ``COSIM_BINARY`` env var or ``PATH``."""
+    """Find the cosim executable: ``COSIM_BINARY`` if set (exclusively --
+    no ``PATH`` fallback when it points nowhere), else ``PATH``."""
     from_env = os.environ.get("COSIM_BINARY")
     if from_env:
         return from_env if Path(from_env).exists() else None

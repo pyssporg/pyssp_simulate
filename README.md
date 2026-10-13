@@ -14,14 +14,22 @@ Supported backends:
 | `fmpy`        | [FMPy](https://pypi.org/project/FMPy/), pure-Python co-simulation master                     | PyPI, included in the base install        |
 | `omsimulator` | [OMSimulator](https://pypi.org/project/OMSimulator/), OpenModelica's FMI co-simulation environment | PyPI, optional extra (see caveats)   |
 | `ssp4sim`     | [ssp4sim](https://github.com/jkCXf9X4/ssp4sim), C++ engine with Python bindings              | GitHub releases, Linux x86_64, experimental |
-| `cosim`       | [cosim](https://github.com/open-simulation-platform/cosim-cli), Open Simulation Platform command-line co-simulator | GitHub releases binary (experimental, future work) |
+| `cosim`       | [cosim](https://github.com/open-simulation-platform/cosim-cli), Open Simulation Platform command-line co-simulator | GitHub releases binary (experimental) |
 
 ## Installation
 
 Requires Python 3.10+.
 
+pyssp_simulate is not yet published on PyPI; install it from the repository:
+
 ```bash
-pip install pyssp_simulate
+pip install git+https://github.com/pyssporg/pyssp_simulate.git
+```
+
+or from a checkout:
+
+```bash
+pip install .
 ```
 
 The base install includes FMPy, which installs reliably from PyPI on every
@@ -34,14 +42,17 @@ features.
 `simulate(spec, backend="auto")` (the default) uses the first available backend
 in registry order: `fmpy`, `omsimulator`, `ssp4sim`, `cosim`.
 
+Optional extras use the same syntax — `pip install ".[all]"` from a checkout,
+or `pip install "pyssp_simulate[all]"` once the package is published:
+
 ```bash
-pip install "pyssp_simulate[all]"   # every backend that is pip-installable
+pip install ".[all]"                  # every backend that is pip-installable
 ```
 
 ### OMSimulator
 
 ```bash
-pip install "pyssp_simulate[omsimulator]"
+pip install ".[omsimulator]"
 ```
 
 The OMSimulator package on PyPI is an sdist that downloads engine binaries
@@ -93,16 +104,18 @@ Wheel caveats (pyssp_simulate works around both):
 Simulation Platform command-line co-simulator. It is not pip-installable:
 download a release binary from
 [cosim-cli releases](https://github.com/open-simulation-platform/cosim-cli/releases)
-and put it on `PATH`, or point the `COSIM_BINARY` environment variable at it.
+and put it on `PATH`, or point the `COSIM_BINARY` environment variable at it
+(when set, `COSIM_BINARY` is used exclusively — a stale value disables the
+backend rather than falling back to `PATH`).
 
-Note that cosim has no step-size flag; the communication step is taken from
-the SSD's simulation information, so `SimulationSpec.step_size` does not apply to
-this backend.
+cosim has no command-line step-size option: libcosim reads the communication
+step from an OSP annotation in the SSD (a fixed-step-algorithm entry).
+Packages without such an annotation fail in cosim itself — v0.8.0 exits with
+a segfault — and `SimulationSpec.step_size` does not apply to this backend.
 
 **Status: experimental.** The backend is validated against cosim v0.8.0 on
-Linux (the v0.9.0 release binaries require GLIBC ≥ 2.38). libcosim needs an
-OSP fixed-step-algorithm annotation in the SSD to select its master step;
-system structures without such an annotation are rejected by cosim itself.
+Linux x86_64 (the v0.9.0 release binaries require GLIBC ≥ 2.38); other
+platforms and versions are untested.
 
 ### Why isn't everything in the base install?
 
@@ -116,18 +129,25 @@ the cosim binary are not on PyPI at all.
 ```python
 from pyssp_simulate import SimulationSpec, simulate_all, compare
 
-spec = SimulationSpec(ssp="model.ssp", start_time=0.0, stop_time=10.0)
+spec = SimulationSpec(ssp="model.ssp", start_time=0.0, stop_time=1.0, step_size=0.001)
 results = simulate_all(spec)          # every backend that is installed
 report = compare(results)             # first result is the reference
 print(report.summary())
 ```
+
+`simulate_all` runs every registered backend whose engine is installed and
+emits a `RuntimeWarning` for each one it has to skip, so a base install (FMPy
+only) yields a single result. `compare` needs at least two results — with
+only one backend installed there is nothing to compare yet. The mapping
+returned by `simulate_all` is accepted by `compare` directly, as shown; the
+first backend that ran acts as the reference.
 
 To run a single backend:
 
 ```python
 from pyssp_simulate import SimulationSpec, simulate
 
-spec = SimulationSpec(ssp="model.ssp", start_time=0.0, stop_time=10.0)
+spec = SimulationSpec(ssp="model.ssp", start_time=0.0, stop_time=1.0, step_size=0.001)
 result = simulate(spec, backend="fmpy")
 ```
 
@@ -135,9 +155,9 @@ result = simulate(spec, backend="fmpy")
 
 Every backend returns a `SimulationResult` wrapping a structured NumPy array
 with a `"time"` field plus one field per signal. Signal names are canonical
-`<component>.<signal>` names — engine-specific path prefixes such as
-OMSimulator's `model.root.` are stripped — so results from different engines
-can be compared directly.
+`<component>.<signal>` names — engine-specific path prefixes (such as
+OMSimulator's root-system name) are stripped — so results from different
+engines can be compared directly.
 
 ```python
 result["Integrator.y"]   # one signal as a NumPy array
@@ -153,8 +173,11 @@ result.write_csv("fmpy.csv")
 result = SimulationResult.from_csv("fmpy.csv")
 ```
 
-`result.artifacts` collects files worth keeping (generated configs, logs, raw
-engine output).
+`result.artifacts` collects files worth keeping. Its contents are
+backend-dependent: every backend records the result CSV written through
+`result_file` or `write_csv`, and backends that drive external engines also
+record what they generated (for example ssp4sim's JSON config). The default
+FMPy backend runs in-process and produces no extra artifacts.
 
 ## SimulationSpec
 
@@ -173,9 +196,13 @@ spec = SimulationSpec(
 ```
 
 `ssp` accepts either an `.ssp` archive or an unpacked SSP directory (a
-directory containing an `.ssd` file). Unpacked FMU directories — a directory
+directory with a top-level `.ssd` file). Unpacked FMU directories — a directory
 containing `modelDescription.xml` — are automatically repackaged into `.fmu`
 archives at runtime.
+
+`tolerance` is honored by the OMSimulator and ssp4sim backends (ssp4sim
+substitutes `1e-4` when left at `None`); FMPy and cosim have no tolerance
+setting and ignore it.
 
 ## Comparing results
 
@@ -194,12 +221,18 @@ report.summary()                     # dict summary for logging/JSON
 A signal passes when its `max_abs_error` is at most
 `atol + rtol * max(|reference_min|, |reference_max|)`.
 
+How closely two engines agree is limited by the communication step size and
+by how each master sequences component inputs and outputs — expect
+differences on the order of the step size, growing with simulation length.
+Use a small `step_size` when tight cross-engine agreement matters (the
+quickstart above uses `0.001` for this reason).
+
 ## Permutation runs
 
 A permutation config is a JSON file naming one SSP package and the sets of
-simulation parameters to sweep. Each permutation field accepts a scalar, a
-list, or `null`, and the executed runs are the cartesian product, each run
-with every configured backend:
+simulation parameters to sweep. Each numeric field (`start_time`, `stop_time`,
+`step_size`, `tolerance`) accepts a scalar, a list, or `null`, and the executed
+runs are the cartesian product, each run with every configured backend:
 
 ```json
 {
@@ -254,13 +287,21 @@ $ pyssp-simulate compare fmpy.csv omsimulator.csv --atol 1e-3 --output metrics.c
 $ pyssp-simulate run-all sweep.json
 ```
 
-`run` simulates one SSP package (with `--backend auto` by default) and writes
-the result CSV given `--output`. `backends` lists every registered backend and
-its availability. `compare` takes two or more result CSVs, using the first as
-the reference, and exits with code 0 when all signals pass the tolerance and 1
-otherwise; `--json` prints the summary as JSON. `run-all` executes every
-permutation of a config file, printing one line per run and a final summary,
-and exits nonzero when any compared run fails.
+`run` simulates one SSP package and writes the result CSV given `--output`
+(short form `-o`). It accepts `--backend` (`auto` by default, which picks the
+first available backend), `--start-time`, `--stop-time` (default `1.0`),
+`--step-size`, and `--tolerance`.
+
+`backends` lists every registered backend and its availability.
+
+`compare` takes two or more result CSVs, using the first as the reference. It
+accepts `--atol` and `--rtol` for the pass/fail tolerance, `--signals` to
+restrict the comparison to a comma-separated subset of signals, `--output`
+to write per-signal metrics, and `--json` to print the summary as JSON. It
+exits with code 0 when all signals pass the tolerance and 1 otherwise.
+
+`run-all` executes every permutation of a config file, printing one line per
+run and a final summary, and exits nonzero when any compared run fails.
 
 ## Development
 

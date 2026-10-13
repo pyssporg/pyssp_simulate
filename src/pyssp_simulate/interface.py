@@ -69,7 +69,12 @@ def get_simulator_class(name: str) -> type[Simulator]:
 
 
 def get_simulator(name: str) -> Simulator:
-    """Instantiate a backend by name, raising if its engine is missing."""
+    """Instantiate a backend by name, raising if its engine is missing.
+
+    Names are case-insensitive. Unknown names raise ``KeyError``; a known
+    backend whose engine is not installed raises
+    :class:`BackendNotAvailableError` with an install hint.
+    """
     key = name.lower()
     simulator_class = get_simulator_class(key)
     ok, reason = simulator_class.available()
@@ -127,7 +132,9 @@ def simulate_all(
     """Simulate an SSP package with several backends and collect the results.
 
     Runs every backend in ``backends`` (default: all registered) whose
-    engine is installed, skipping the others. Raises when no backend ran.
+    engine is installed, skipping the others with a ``RuntimeWarning``
+    naming the reason. Returns a mapping from backend name to result, in
+    the order the backends ran. Raises when no backend ran.
     """
     names = backends if backends is not None else backend_names()
 

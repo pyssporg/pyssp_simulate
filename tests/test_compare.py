@@ -108,6 +108,15 @@ class TestCompare:
         assert report.summary()["max_abs_error"] == pytest.approx(1.0)
         assert report.common_signals == ("Ball.h",)
 
+    def test_accepts_mapping_from_simulate_all(self):
+        reference = make_result("fmpy", [0.0, 1.0], [1.0, 1.0])
+        candidate = make_result("omsimulator", [0.0, 1.0], [1.0, 1.5])
+        report = compare({"fmpy": reference, "omsimulator": candidate})
+        assert report.pairs[0].reference_backend == "fmpy"
+        assert report.pairs[0].candidate_backend == "omsimulator"
+        assert report.pairs[0].max_abs_error == pytest.approx(0.5)
+        assert report.results == (reference, candidate)
+
     def test_pass_with_tolerances(self):
         reference = make_result("ref", [0.0, 1.0], [100.0, 100.0])
         candidate = make_result("cand", [0.0, 1.0], [100.0, 100.5])
