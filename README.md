@@ -20,7 +20,16 @@ Supported backends:
 
 Requires Python 3.10+.
 
-pyssp_simulate is not yet published on PyPI; install it from the repository:
+pyssp_simulate is not yet published on PyPI; install the wheel from a
+[GitHub release](https://github.com/pyssporg/pyssp_simulate/releases) — no
+checkout or git clone needed:
+
+```bash
+pip install https://github.com/pyssporg/pyssp_simulate/releases/download/v0.1.0/pyssp_simulate-0.1.0-py3-none-any.whl
+```
+
+(Bump the version in the URL to pin a different release.) Alternatively,
+install straight from the repository:
 
 ```bash
 pip install git+https://github.com/pyssporg/pyssp_simulate.git
@@ -42,8 +51,10 @@ features.
 `simulate(spec, backend="auto")` (the default) uses the first available backend
 in registry order: `fmpy`, `omsimulator`, `ssp4sim`, `cosim`.
 
-Optional extras use the same syntax — `pip install ".[all]"` from a checkout,
-or `pip install "pyssp_simulate[all]"` once the package is published:
+Optional extras use the same syntax — `pip install ".[all]"` from a
+checkout, `pip install "pyssp_simulate[all] @ <release-wheel-url>"` from a
+release, or plain `pip install "pyssp_simulate[all]"` once the package is
+published on PyPI:
 
 ```bash
 pip install ".[all]"                  # every backend that is pip-installable

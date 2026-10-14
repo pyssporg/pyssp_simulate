@@ -25,9 +25,9 @@ from pyssp_simulate.spec import SimulationSpec
 class OMSimulatorSimulator(Simulator):
     name = "omsimulator"
     install_hint = (
-        "Install with `pip install pyssp_simulate[omsimulator]`, or install "
-        "OMSimulator manually (see "
-        "https://github.com/pyssporg/pyssp_simulate#omsimulator)."
+        "Install OMSimulator alongside pyssp_simulate (see "
+        "https://github.com/pyssporg/pyssp_simulate#omsimulator) or "
+        "manually."
     )
 
     @classmethod
