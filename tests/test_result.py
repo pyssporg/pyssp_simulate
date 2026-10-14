@@ -36,6 +36,23 @@ class TestCanonicalizeSignal:
     def test_root_system_name_is_dropped(self):
         assert canonicalize_signal("system.BouncingBall.h", "system") == "BouncingBall.h"
 
+    def test_container_name_sequence_is_dropped(self):
+        # OMSimulator 3.0.0.post198+ prefixes columns with the SSD name on
+        # top of the system name: <ssd>.<system>.<component>.<signal>.
+        containers = ("RampToIntegrator", "system")
+        assert (
+            canonicalize_signal("RampToIntegrator.system.RampSource.y", containers)
+            == "RampSource.y"
+        )
+        # Older versions only prefix the system name; both must work with
+        # the same container set.
+        assert canonicalize_signal("system.RampSource.y", containers) == "RampSource.y"
+
+    def test_container_names_never_eat_real_signals(self):
+        # A component two segments deep is never stripped, even when its
+        # name matches a container level.
+        assert canonicalize_signal("system.h", ("system", "doc")) == "system.h"
+
     def test_two_segments_are_never_stripped(self):
         # "model.x" could be a genuine component named model.
         assert canonicalize_signal("model.h") == "model.h"

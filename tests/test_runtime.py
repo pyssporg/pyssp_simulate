@@ -11,7 +11,7 @@ from pyssp_simulate.runtime import (
     find_ssd,
     package_fmu_dir,
     prepare_runtime_ssp,
-    read_root_system_name,
+    read_container_names,
     repackage_unpacked_fmus,
 )
 
@@ -24,8 +24,8 @@ def make_fmu_dir(parent: Path, name: str = "TestFMU") -> Path:
     return fmu_dir
 
 
-class TestReadRootSystemName:
-    def test_reads_name(self, tmp_path: Path):
+class TestReadContainerNames:
+    def test_reads_ssd_and_system_names(self, tmp_path: Path):
         ssd = tmp_path / "SystemStructure.ssd"
         ssd.write_text(
             '<?xml version="1.0"?>'
@@ -34,12 +34,36 @@ class TestReadRootSystemName:
             '<ssd:System name="mysystem"/>'
             "</ssd:SystemStructureDescription>"
         )
-        assert read_root_system_name(ssd) == "mysystem"
+        assert read_container_names(ssd) == ("doc", "mysystem")
 
-    def test_invalid_xml_returns_none(self, tmp_path: Path):
+    def test_nested_system_names_are_included(self, tmp_path: Path):
+        ssd = tmp_path / "SystemStructure.ssd"
+        ssd.write_text(
+            '<?xml version="1.0"?>'
+            '<ssd:SystemStructureDescription xmlns:ssd="http://ssp-standard.org/SSP1"'
+            ' name="doc" version="1.0">'
+            '<ssd:System name="outer">'
+            '<ssd:Elements><ssd:System name="inner"/></ssd:Elements>'
+            "</ssd:System>"
+            "</ssd:SystemStructureDescription>"
+        )
+        assert read_container_names(ssd) == ("doc", "outer", "inner")
+
+    def test_unnamed_levels_are_skipped(self, tmp_path: Path):
+        ssd = tmp_path / "SystemStructure.ssd"
+        ssd.write_text(
+            '<?xml version="1.0"?>'
+            '<ssd:SystemStructureDescription xmlns:ssd="http://ssp-standard.org/SSP1"'
+            ' version="1.0">'
+            '<ssd:System name="mysystem"/>'
+            "</ssd:SystemStructureDescription>"
+        )
+        assert read_container_names(ssd) == ("mysystem",)
+
+    def test_invalid_xml_returns_empty_tuple(self, tmp_path: Path):
         ssd = tmp_path / "broken.ssd"
         ssd.write_text("<not xml")
-        assert read_root_system_name(ssd) is None
+        assert read_container_names(ssd) == ()
 
 
 class TestRepackagedFmus:
@@ -94,7 +118,7 @@ class TestPrepareRuntimeSsp:
         with prepare_runtime_ssp(ssp_archive) as runtime:
             assert zipfile.is_zipfile(runtime.archive)
             assert runtime.ssd_name == "SystemStructure.ssd"
-            assert runtime.root_system == "system"
+            assert runtime.container_names == ("RampToIntegrator", "system")
             with zipfile.ZipFile(runtime.archive) as archive:
                 names = archive.namelist()
                 assert "SystemStructure.ssd" in names
@@ -110,7 +134,7 @@ class TestPrepareRuntimeSsp:
             assert not any(
                 name == "resources/Integrator/modelDescription.xml" for name in names
             )
-            assert runtime.root_system == "system"
+            assert runtime.container_names == ("RampToIntegrator", "system")
 
     def test_original_input_is_not_modified(self, ssp_dir: Path):
         before = sorted(p.relative_to(ssp_dir) for p in ssp_dir.rglob("*"))

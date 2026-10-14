@@ -12,6 +12,7 @@ SSP 1.0 schema. Use the other backends for advanced SSP features.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -43,7 +44,7 @@ class FMPySimulator(Simulator):
                 step_size=spec.step_size,
             )
             runtime_s = time.perf_counter() - start
-            data = _canonicalize(raw, runtime.root_system)
+            data = _canonicalize(raw, runtime.container_names)
 
         result = SimulationResult(
             data=data,
@@ -56,7 +57,7 @@ class FMPySimulator(Simulator):
         return result
 
 
-def _canonicalize(raw: np.ndarray, root_system: str | None) -> np.ndarray:
+def _canonicalize(raw: np.ndarray, root_system: str | Sequence[str] | None) -> np.ndarray:
     """Rename FMPy's result fields to canonical signal names."""
     names = list(raw.dtype.names or ())
     canonical = {name: canonicalize_signal(name, root_system) for name in names}

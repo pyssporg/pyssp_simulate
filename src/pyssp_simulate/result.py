@@ -9,6 +9,7 @@ regardless of how each engine names its result columns.
 from __future__ import annotations
 
 import csv
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,17 +25,20 @@ TIME_SIGNAL = "time"
 _DROP_PREFIXES = ("root", "fmu", "model")
 
 
-def canonicalize_signal(name: str, root_system: str | None = None) -> str:
+def canonicalize_signal(
+    name: str, root_system: str | Sequence[str] | None = None
+) -> str:
     """Normalize an engine result column name to ``<component>.<signal>``.
 
     Strips surrounding whitespace and quotes, maps the independent variable
     to ``"time"`` (case-insensitively — engines also emit ``"Time"``), and
     drops leading path segments that refer to containers rather than
     components: the literal segments ``root``, ``fmu``, and ``model``, plus
-    ``root_system`` when given (for example OMSimulator's root-system
-    name). At least two segments are always kept for qualified names, so a
-    two-segment name like ``root.y`` is returned unchanged. Empty segments
-    are dropped.
+    the container name(s) given in ``root_system`` — a single name or a
+    sequence, for example the SSD and system names OMSimulator prefixes
+    its result columns with. At least two segments are always kept for
+    qualified names, so a two-segment name like ``root.y`` is returned
+    unchanged. Empty segments are dropped.
     """
     normalized = name.strip().strip('"').strip("'")
     if normalized.lower() == TIME_SIGNAL:
@@ -46,7 +50,8 @@ def canonicalize_signal(name: str, root_system: str | None = None) -> str:
 
     droppable = set(_DROP_PREFIXES)
     if root_system:
-        droppable.add(root_system)
+        roots = (root_system,) if isinstance(root_system, str) else root_system
+        droppable.update(root for root in roots if root)
 
     while len(parts) > 2 and parts[0] in droppable:
         parts.pop(0)
@@ -71,15 +76,18 @@ def array_from_columns(columns: dict[str, np.ndarray]) -> np.ndarray:
     return array
 
 
-def read_result_csv(path: Path | str, root_system: str | None = None) -> np.ndarray:
+def read_result_csv(
+    path: Path | str, root_system: str | Sequence[str] | None = None
+) -> np.ndarray:
     """Read a numeric result CSV into a structured array.
 
     The first row must be the header; all values are parsed as floats.
     Header names are canonicalized with :func:`canonicalize_signal`.
 
     :param path: CSV file to read.
-    :param root_system: root-system name to strip from header names, for
-        engine output that prefixes signals with it (OMSimulator does).
+    :param root_system: container level name(s) to strip from header names,
+        for engine output that prefixes signals with the SSD name and/or
+        system names (OMSimulator does). Accepts one name or a sequence.
     :raises ValueError: if the file is empty, has ragged rows, or has
         duplicate columns after canonicalization.
     """

@@ -81,12 +81,15 @@ class SimulationSpec:
     def workspace(self) -> Iterator[Path]:
         """Yield a directory backends can scribble in.
 
-        Uses ``working_dir`` when given (created if missing, not cleaned up),
-        otherwise a temporary directory that is removed afterwards.
+        Uses ``working_dir`` when given (resolved to an absolute path so
+        backends that change the process working directory keep working,
+        created if missing, not cleaned up), otherwise a temporary
+        directory that is removed afterwards.
         """
         if self.working_dir is not None:
-            self.working_dir.mkdir(parents=True, exist_ok=True)
-            yield self.working_dir
+            work = self.working_dir.resolve()
+            work.mkdir(parents=True, exist_ok=True)
+            yield work
             return
         with tempfile.TemporaryDirectory(prefix="pyssp_simulate_") as tmp:
             yield Path(tmp)

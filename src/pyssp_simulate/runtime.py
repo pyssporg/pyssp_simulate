@@ -27,31 +27,39 @@ class RuntimeSSP:
     :param archive: path to a runnable ``.ssp`` zip archive.
     :param root: path to the unpacked package tree.
     :param ssd_name: file name of the active SSD variant.
-    :param root_system: name of the SSD's root system (used to canonicalize
-        signal names), or ``None`` when it cannot be determined.
+    :param container_names: names of the SSD and of every system in it
+        (the leading path levels engines may prefix to signal names),
+        used to canonicalize signal names; empty when undeterminable.
     """
 
     archive: Path
     root: Path
     ssd_name: str
-    root_system: str | None
+    container_names: tuple[str, ...]
 
 
-def read_root_system_name(ssd_path: Path) -> str | None:
-    """Return the name of the SSD root system, or ``None`` if unreadable.
+def read_container_names(ssd_path: Path) -> tuple[str, ...]:
+    """Return the names of the SSD and of every system in it.
 
-    Uses a plain XML parse (no schema validation) so exotic but valid
-    SSD files still work.
+    Engines prefix result column names with these container levels; for
+    example OMSimulator 3.0.0.post198 and newer write
+    ``<ssd>.<system>.<component>.<signal>``. Uses a plain XML parse (no
+    schema validation) so exotic but valid SSD files still work. Names
+    are deduplicated in document order; an unreadable SSD yields an
+    empty tuple.
     """
     try:
         tree = ET.parse(ssd_path)
     except ET.ParseError:
-        return None
+        return ()
+    names: list[str] = []
     root = tree.getroot()
+    if root.get("name"):
+        names.append(root.get("name"))
     for element in root.iter():
-        if element.tag.rsplit("}", 1)[-1] == "System":
-            return element.get("name")
-    return None
+        if element.tag.rsplit("}", 1)[-1] == "System" and element.get("name"):
+            names.append(element.get("name"))
+    return tuple(dict.fromkeys(names))
 
 
 def package_fmu_dir(fmu_dir: Path, fmu_path: Path) -> None:
@@ -145,5 +153,5 @@ def prepare_runtime_ssp(source: Path | str) -> Iterator[RuntimeSSP]:
             archive=archive,
             root=root,
             ssd_name=ssd_path.name,
-            root_system=read_root_system_name(ssd_path),
+            container_names=read_container_names(ssd_path),
         )
