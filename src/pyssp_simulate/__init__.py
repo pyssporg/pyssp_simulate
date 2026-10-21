@@ -7,9 +7,9 @@ Public API:
 * :class:`SimulationResult` -- normalized result (structured NumPy array),
   with CSV helpers :func:`read_result_csv` / :func:`write_result_csv` and
   :func:`canonicalize_signal`.
-* :func:`compare` / :func:`compare_pair` / :class:`ComparisonReport` /
-  :class:`PairReport` / :class:`SignalComparison` -- cross-engine
-  comparison.
+* :func:`compare` / :func:`compare_pair` / :func:`compare_to_reference` /
+  :class:`ComparisonWindow` / :class:`ComparisonReport` / :class:`PairReport` /
+  :class:`SignalComparison` -- cross-engine and reference-CSV comparison.
 * :class:`PermutationConfig` / :func:`load_permutation_config` /
   :func:`iter_permutation_specs` / :func:`run_permutations` /
   :class:`PermutationRun` / :class:`ComparisonSettings` -- batch sweeps
@@ -32,10 +32,12 @@ Example::
 
 from pyssp_simulate.compare import (
     ComparisonReport,
+    ComparisonWindow,
     PairReport,
     SignalComparison,
     compare,
     compare_pair,
+    compare_to_reference,
 )
 from pyssp_simulate.interface import (
     BACKEND_MODULES,
@@ -64,13 +66,14 @@ from pyssp_simulate.result import (
 )
 from pyssp_simulate.spec import SimulationSpec, spec_summary
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "BACKEND_MODULES",
     "BackendNotAvailableError",
     "ComparisonReport",
     "ComparisonSettings",
+    "ComparisonWindow",
     "PairReport",
     "PermutationConfig",
     "PermutationRun",
@@ -84,6 +87,7 @@ __all__ = [
     "canonicalize_signal",
     "compare",
     "compare_pair",
+    "compare_to_reference",
     "get_simulator",
     "iter_permutation_specs",
     "load_permutation_config",

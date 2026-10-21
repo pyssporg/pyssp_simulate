@@ -19,6 +19,32 @@ from pyssp_simulate.result import SimulationResult
 
 
 @dataclass(frozen=True)
+class ComparisonWindow:
+    """Explicit time grid for comparison.
+
+    Use this when every result must be judged on the same grid, independent of
+    whichever result happens to be the reference.
+    """
+
+    start_time: float
+    stop_time: float
+    step_size: float
+
+    def __post_init__(self) -> None:
+        if self.stop_time <= self.start_time:
+            raise ValueError("stop_time must be greater than start_time")
+        if self.step_size <= 0:
+            raise ValueError("step_size must be positive")
+
+    def time_grid(self) -> np.ndarray:
+        span = self.stop_time - self.start_time
+        steps = int(round(span / self.step_size))
+        return np.linspace(
+            self.start_time, self.stop_time, steps + 1, dtype=np.float64
+        )
+
+
+@dataclass(frozen=True)
 class SignalComparison:
     """Error metrics of one candidate result vs the reference, one signal."""
 
@@ -164,8 +190,13 @@ def compare_pair(
     reference: SimulationResult,
     candidate: SimulationResult,
     signals: Sequence[str] | None = None,
+    window: ComparisonWindow | None = None,
 ) -> PairReport:
-    """Compare one candidate result against a reference result."""
+    """Compare one candidate result against a reference result.
+
+    :param window: optional explicit time grid; when omitted the reference
+        result's own time samples are used.
+    """
     reference_backend = reference.backend
     candidate_backend = candidate.backend
 
@@ -175,10 +206,10 @@ def compare_pair(
     if missing:
         raise KeyError(f"Signals missing from one of the results: {missing}")
 
-    target = reference.time
+    target = window.time_grid() if window is not None else reference.time
     comparisons: list[SignalComparison] = []
     for signal in selected:
-        reference_values = reference[signal]
+        reference_values = resample(reference.time, reference[signal], target)
         candidate_values = resample(candidate.time, candidate[signal], target)
         errors = np.abs(reference_values - candidate_values)
         comparisons.append(
@@ -205,6 +236,7 @@ def compare_pair(
 def compare(
     results: Sequence[SimulationResult] | Mapping[str, SimulationResult],
     signals: Sequence[str] | None = None,
+    window: ComparisonWindow | None = None,
 ) -> ComparisonReport:
     """Compare every result against the first one (the reference).
 
@@ -214,6 +246,7 @@ def compare(
         the order the backends ran).
     :param signals: optional subset of signals to compare (default: the
         signals present in every result).
+    :param window: optional explicit time grid (see :class:`ComparisonWindow`).
     :raises ValueError: if fewer than two results are given.
     :raises KeyError: if a requested signal is missing from a result.
     """
@@ -230,9 +263,42 @@ def compare(
         common &= set(result.signals)
 
     selected = list(signals) if signals is not None else sorted(common)
-    pairs = tuple(compare_pair(results[0], result, selected) for result in results[1:])
+    pairs = tuple(
+        compare_pair(results[0], result, selected, window=window)
+        for result in results[1:]
+    )
     return ComparisonReport(
         results=tuple(results),
         pairs=pairs,
         common_signals=tuple(selected),
     )
+
+
+def compare_to_reference(
+    reference_path: Path | str,
+    results: Sequence[SimulationResult] | Mapping[str, SimulationResult],
+    *,
+    model_name: str | None = None,
+    prefix: str | None = None,
+    reference_backend: str = "reference",
+    signals: Sequence[str] | None = None,
+    window: ComparisonWindow | None = None,
+) -> ComparisonReport:
+    """Compare one or more results against a trusted reference CSV.
+
+    The reference CSV is loaded with
+    :meth:`SimulationResult.from_reference_csv`, then every result is compared
+    against it using :func:`compare`.
+    """
+    reference = SimulationResult.from_reference_csv(
+        reference_path,
+        model_name=model_name,
+        prefix=prefix,
+        backend=reference_backend,
+    )
+    candidates = (
+        list(results.values()) if isinstance(results, Mapping) else list(results)
+    )
+    if not candidates:
+        raise ValueError("Comparison needs at least one candidate result")
+    return compare([reference, *candidates], signals=signals, window=window)

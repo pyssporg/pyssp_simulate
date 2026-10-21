@@ -77,7 +77,10 @@ def array_from_columns(columns: dict[str, np.ndarray]) -> np.ndarray:
 
 
 def read_result_csv(
-    path: Path | str, root_system: str | Sequence[str] | None = None
+    path: Path | str,
+    root_system: str | Sequence[str] | None = None,
+    *,
+    prefix: str | None = None,
 ) -> np.ndarray:
     """Read a numeric result CSV into a structured array.
 
@@ -88,6 +91,8 @@ def read_result_csv(
     :param root_system: container level name(s) to strip from header names,
         for engine output that prefixes signals with the SSD name and/or
         system names (OMSimulator does). Accepts one name or a sequence.
+    :param prefix: exact leading text to strip before canonicalization, for
+        reference CSVs such as ``default.BouncingBall.h``.
     :raises ValueError: if the file is empty, has ragged rows, or has
         duplicate columns after canonicalization.
     """
@@ -100,17 +105,36 @@ def read_result_csv(
             raise ValueError(f"Result CSV {path} is empty") from error
         rows = [row for row in reader if row]
 
-    header = [canonicalize_signal(name, root_system) for name in raw_header]
-    if len(set(header)) != len(header):
-        raise ValueError(f"Duplicate columns after canonicalization in {path}: {header}")
+    header = []
+    column_indices = []
+    for index, name in enumerate(raw_header):
+        stripped = name.strip()
+        if prefix and stripped.startswith(prefix):
+            stripped = stripped[len(prefix) :]
+        canonical = canonicalize_signal(stripped, root_system)
+        if canonical in header:
+            if canonical == TIME_SIGNAL or prefix:
+                # Engines emit both ``time`` and ``<prefix>.time``; reference
+                # CSVs do the same with ``default.<model>.time``.
+                continue
+            raise ValueError(
+                f"Duplicate columns after canonicalization in {path}: {header + [canonical]}"
+            )
+        header.append(canonical)
+        column_indices.append(index)
 
     if not rows:
         return array_from_columns({name: np.array([], dtype=np.float64) for name in header})
 
     values = np.array([[float(cell) for cell in row] for row in rows], dtype=np.float64)
-    if values.shape[1] != len(header):
+    if values.shape[1] != len(raw_header):
         raise ValueError(f"Ragged rows in result CSV {path}")
-    return array_from_columns({name: values[:, index] for index, name in enumerate(header)})
+    return array_from_columns(
+        {
+            name: values[:, source_index]
+            for name, source_index in zip(header, column_indices)
+        }
+    )
 
 
 def write_result_csv(path: Path | str, data: np.ndarray) -> Path:
@@ -178,15 +202,46 @@ class SimulationResult:
         spec: SimulationSpec | None = None,
         runtime_s: float | None = None,
         artifacts: tuple[Path, ...] = (),
+        *,
+        strip_prefix: str | None = None,
     ) -> SimulationResult:
         """Read a result previously written by :meth:`write_csv`.
 
         Header names are canonicalized; the standard ``model``/``root``/
-        ``fmu`` prefixes are dropped. Use :func:`read_result_csv` directly
-        when a custom root-system prefix must be stripped as well.
+        ``fmu`` prefixes are dropped when a component segment remains. Use
+        ``strip_prefix`` to remove an explicit leading prefix such as
+        ``"fmu."`` from two-segment names.
         """
         return cls(
-            data=read_result_csv(path),
+            data=read_result_csv(path, prefix=strip_prefix),
+            backend=backend,
+            spec=spec,
+            runtime_s=runtime_s,
+            artifacts=artifacts,
+        )
+
+    @classmethod
+    def from_reference_csv(
+        cls,
+        path: Path | str,
+        *,
+        model_name: str | None = None,
+        prefix: str | None = None,
+        backend: str = "reference",
+        spec: SimulationSpec | None = None,
+        runtime_s: float | None = None,
+        artifacts: tuple[Path, ...] = (),
+    ) -> SimulationResult:
+        """Read a trusted reference CSV, stripping its model prefix.
+
+        Reference trajectories commonly name columns
+        ``default.<model>.<signal>``. Pass ``model_name`` for that convention,
+        or an explicit ``prefix`` for another one.
+        """
+        if prefix is None and model_name:
+            prefix = f"default.{model_name}."
+        return cls(
+            data=read_result_csv(path, prefix=prefix),
             backend=backend,
             spec=spec,
             runtime_s=runtime_s,

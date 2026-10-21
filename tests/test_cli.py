@@ -86,3 +86,40 @@ def test_compare_command_failing_tolerance(tmp_path: Path, capsys):
 def test_compare_command_needs_two_files(tmp_path: Path, capsys):
     exit_code = main(["compare", str(tmp_path / "only.csv")])
     assert exit_code == 2
+
+
+def test_compare_command_with_reference_csv(tmp_path: Path, capsys):
+    reference = tmp_path / "reference.csv"
+    reference.write_text(
+        "time,default.Ball.time,default.Ball.h\n"
+        "0.0,0.0,1.0\n"
+        "1.0,1.0,0.5\n"
+    )
+    result = tmp_path / "fmpy.csv"
+    time = np.linspace(0.0, 1.0, 3)
+    data = array_from_columns({"time": time, "h": [1.0, 0.75, 0.55]})
+    SimulationResult(data=data, backend="fmpy").write_csv(result)
+
+    exit_code = main(
+        [
+            "compare",
+            str(result),
+            "--reference",
+            str(reference),
+            "--model-name",
+            "Ball",
+            "--start-time",
+            "0",
+            "--stop-time",
+            "1",
+            "--step-size",
+            "0.5",
+            "--atol",
+            "0.1",
+        ]
+    )
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "reference vs fmpy" in out
+    assert "PASS" in out

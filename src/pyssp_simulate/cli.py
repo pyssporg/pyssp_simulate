@@ -15,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-from pyssp_simulate.compare import compare
+from pyssp_simulate.compare import ComparisonWindow, compare, compare_to_reference
 from pyssp_simulate.interface import (
     BackendNotAvailableError,
     available_backends,
@@ -63,7 +63,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "compare", help="Compare result CSVs (first file is the reference)"
     )
     compare_parser.add_argument(
-        "csvs", nargs="+", help="two or more result CSV files"
+        "csvs", nargs="*", help="result CSV files (two or more without --reference)"
+    )
+    compare_parser.add_argument(
+        "--reference",
+        default=None,
+        help="trusted reference CSV; each positional CSV is compared against it",
+    )
+    compare_parser.add_argument(
+        "--model-name",
+        default=None,
+        help="strip 'default.<model-name>.' from reference CSV headers",
+    )
+    compare_parser.add_argument(
+        "--strip-prefix",
+        default=None,
+        help="strip this exact prefix from every result CSV header (for example 'fmu.')",
     )
     compare_parser.add_argument(
         "--signals", default=None, help="comma-separated subset of signals to compare"
@@ -73,6 +88,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     compare_parser.add_argument(
         "--rtol", type=float, default=0.0, help="relative tolerance for pass/fail"
+    )
+    compare_parser.add_argument(
+        "--start-time", type=float, default=None, help="explicit comparison start time"
+    )
+    compare_parser.add_argument(
+        "--stop-time", type=float, default=None, help="explicit comparison stop time"
+    )
+    compare_parser.add_argument(
+        "--step-size", type=float, default=None, help="explicit comparison step size"
     )
     compare_parser.add_argument(
         "--output", "-o", default=None, help="write per-signal metrics to this CSV"
@@ -123,16 +147,54 @@ def _backends_command(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _comparison_window(args: argparse.Namespace) -> ComparisonWindow | None:
+    values = (args.start_time, args.stop_time, args.step_size)
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise ValueError(
+            "explicit comparison grid needs --start-time, --stop-time and --step-size"
+        )
+    return ComparisonWindow(
+        start_time=args.start_time,
+        stop_time=args.stop_time,
+        step_size=args.step_size,
+    )
+
+
 def _compare_command(args: argparse.Namespace) -> int:
-    if len(args.csvs) < 2:
-        print("error: compare needs at least two CSV files", file=sys.stderr)
+    if args.reference is None and len(args.csvs) < 2:
+        print(
+            "error: compare needs at least two CSV files without --reference",
+            file=sys.stderr,
+        )
+        return 2
+    if args.reference is not None and not args.csvs:
+        print("error: --reference needs at least one result CSV", file=sys.stderr)
         return 2
 
-    results = [
-        SimulationResult.from_csv(path, backend=Path(path).stem) for path in args.csvs
-    ]
     signals = args.signals.split(",") if args.signals else None
-    report = compare(results, signals=signals)
+    window = _comparison_window(args)
+    results = [
+        SimulationResult.from_csv(
+            path,
+            backend=Path(path).stem,
+            strip_prefix=args.strip_prefix,
+        )
+        for path in args.csvs
+    ]
+
+    if args.reference is not None:
+        report = compare_to_reference(
+            args.reference,
+            results,
+            model_name=args.model_name,
+            reference_backend=Path(args.reference).stem,
+            signals=signals,
+            window=window,
+        )
+    else:
+        report = compare(results, signals=signals, window=window)
 
     if args.json:
         print(json.dumps(report.summary(), indent=2))

@@ -7,7 +7,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pyssp_simulate.compare import compare, compare_pair, resample
+from pyssp_simulate.compare import (
+    ComparisonWindow,
+    compare,
+    compare_pair,
+    compare_to_reference,
+    resample,
+)
 from pyssp_simulate.result import SimulationResult, array_from_columns
 
 
@@ -134,3 +140,63 @@ class TestCompare:
         assert text[0].startswith("signal,reference_backend,candidate_backend")
         assert "Ball.h" in text[1]
         assert "cand" in text[1]
+
+
+class TestComparisonWindow:
+    def test_explicit_grid_is_used_for_both_results(self):
+        reference = make_result("ref", [0.0, 1.0], [0.0, 10.0])
+        candidate = make_result("cand", [0.0, 1.0], [0.0, 10.0])
+        window = ComparisonWindow(start_time=0.0, stop_time=1.0, step_size=0.25)
+
+        report = compare([reference, candidate], window=window)
+
+        assert report.pairs[0].comparisons[0].max_abs_error == pytest.approx(0.0)
+        assert window.time_grid().tolist() == pytest.approx([0.0, 0.25, 0.5, 0.75, 1.0])
+
+    def test_invalid_window_rejected(self):
+        with pytest.raises(ValueError, match="stop_time"):
+            ComparisonWindow(start_time=1.0, stop_time=0.0, step_size=0.1)
+        with pytest.raises(ValueError, match="step_size"):
+            ComparisonWindow(start_time=0.0, stop_time=1.0, step_size=0.0)
+
+
+class TestReferenceComparison:
+    def test_reference_csv_strips_model_prefix(self, tmp_path: Path):
+        path = tmp_path / "reference.csv"
+        path.write_text(
+            "time,default.Ball.time,default.Ball.h\n"
+            "0.0,0.0,1.0\n"
+            "1.0,1.0,0.5\n"
+        )
+        reference = SimulationResult.from_reference_csv(
+            path, model_name="Ball", backend="reference-cs"
+        )
+
+        assert reference.signals == ("h",)
+        assert reference["h"].tolist() == [1.0, 0.5]
+
+    def test_compare_to_reference(self, tmp_path: Path):
+        path = tmp_path / "reference.csv"
+        path.write_text(
+            "time,default.Ball.time,default.Ball.h\n"
+            "0.0,0.0,1.0\n"
+            "1.0,1.0,0.5\n"
+        )
+        candidate = SimulationResult(
+            data=array_from_columns(
+                {"time": np.array([0.0, 1.0]), "h": np.array([1.0, 0.6])}
+            ),
+            backend="fmpy",
+        )
+
+        report = compare_to_reference(
+            path,
+            [candidate],
+            model_name="Ball",
+            signals=["h"],
+            window=ComparisonWindow(0.0, 1.0, 0.5),
+        )
+
+        assert report.pairs[0].reference_backend == "reference"
+        assert report.pairs[0].candidate_backend == "fmpy"
+        assert report.pairs[0].max_abs_error == pytest.approx(0.1)

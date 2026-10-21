@@ -232,6 +232,37 @@ report.summary()                     # dict summary for logging/JSON
 A signal passes when its `max_abs_error` is at most
 `atol + rtol * max(|reference_min|, |reference_max|)`.
 
+### Reference trajectories
+
+`compare_to_reference` compares results against a trusted CSV instead of
+another engine. Reference CSVs often name columns
+`default.<model>.<signal>`; `model_name` strips that prefix. Pass a
+`ComparisonWindow` when every run must be judged on one explicit grid rather
+than the reference file's own samples:
+
+```python
+from pyssp_simulate import ComparisonWindow, compare_to_reference
+
+report = compare_to_reference(
+    "BouncingBall-cs.csv",
+    results,
+    model_name="BouncingBall",
+    signals=["h", "v"],
+    window=ComparisonWindow(start_time=0.0, stop_time=3.0, step_size=0.001),
+)
+```
+
+The CLI accepts the same contract:
+
+```console
+$ pyssp-simulate compare result.csv --reference BouncingBall-cs.csv \
+    --model-name BouncingBall --signals h,v --strip-prefix fmu. \
+    --start-time 0 --stop-time 3 --step-size 0.001 --atol 1e-3
+```
+
+Use `--strip-prefix` when an engine writes a generic component prefix such as
+`fmu.h`; reference comparison needs both sides to use the same signal names.
+
 How closely two engines agree is limited by the communication step size and
 by how each master sequences component inputs and outputs — expect
 differences on the order of the step size, growing with simulation length.

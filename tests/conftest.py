@@ -87,41 +87,57 @@ def test_fmus(tmp_path_factory: pytest.TempPathFactory) -> list[Path]:
 
 
 def _default_experiment():
-    """Build the SSD default experiment with a fixed-step algorithm.
+    """Build the SSD default experiment for the test SSP."""
+    from pyssp_standard.ssd import DefaultExperiment
 
-    libcosim (the cosim backend) reads the co-simulation algorithm from
-    a ``com.opensimulationplatform`` annotation on the default
-    experiment: an ``osp:FixedStepAlgorithm`` with a ``baseStepSize``.
-    Without it cosim has no algorithm at all and crashes. Backends that
-    take the step size from the command line simply ignore it.
+    return DefaultExperiment(start_time=START_TIME, stop_time=STOP_TIME)
+
+
+def _add_cosim_algorithm(ssp_path: Path) -> None:
+    """Add the OSP fixed-step annotation to the packaged SSD.
+
+    The refactored ``pyssp_standard`` model does not expose
+    ``DefaultExperiment`` annotations, so the fixture injects the annotation
+    into the packaged XML after the archive is written.  libcosim needs it to
+    select a co-simulation algorithm.
     """
     from lxml import etree as ET
-    from pyssp_standard import Annotation
-    from pyssp_standard.ssd import DefaultExperiment
-    from pyssp_standard.standard import ModelicaStandard
+    from pyssp_standard.standard.ssp1.codec.xml_utils import NS_SSC, NS_SSD
 
     osp_ns = "http://opensimulationplatform.com/SSP/OSPAnnotations"
-    ssc_ns = ModelicaStandard.namespaces["ssc"]
 
-    # libcosim matches the raw prefix-qualified tag names, so the "osp"
-    # prefix must be declared exactly as written. It has to live on the
-    # annotation element rather than on "osp:Algorithm" itself, which
-    # libcosim would otherwise reject as an unknown algorithm.
-    annotation_element = ET.Element(
-        ET.QName(ssc_ns, "Annotation"),
-        type="com.opensimulationplatform",
-        nsmap={"osp": osp_ns},
-    )
-    algorithm = ET.SubElement(annotation_element, ET.QName(osp_ns, "Algorithm"))
-    ET.SubElement(
-        algorithm, ET.QName(osp_ns, "FixedStepAlgorithm"), baseStepSize=str(STEP_SIZE)
-    )
+    def add_annotation(data: bytes) -> bytes:
+        root = ET.fromstring(data)
+        default = root.find("{http://ssp-standard.org/SSP1/SystemStructureDescription}DefaultExperiment")
+        if default is None:
+            return data
+        annotations = default.find(ET.QName(NS_SSD, "Annotations"))
+        if annotations is None:
+            annotations = ET.SubElement(default, ET.QName(NS_SSD, "Annotations"))
+        annotation = ET.SubElement(
+            annotations,
+            ET.QName(NS_SSC, "Annotation"),
+            type="com.opensimulationplatform",
+            nsmap={"ssc": NS_SSC, "osp": osp_ns},
+        )
+        algorithm = ET.SubElement(annotation, ET.QName(osp_ns, "Algorithm"))
+        ET.SubElement(
+            algorithm,
+            ET.QName(osp_ns, "FixedStepAlgorithm"),
+            baseStepSize=str(STEP_SIZE),
+        )
+        return ET.tostring(root, xml_declaration=True, encoding="utf-8")
 
-    experiment = DefaultExperiment(None)
-    experiment.start_time = START_TIME
-    experiment.stop_time = STOP_TIME
-    experiment.annotations.add_annotation(Annotation(annotation_element))
-    return experiment
+    with zipfile.ZipFile(ssp_path) as archive:
+        entries = [(info, archive.read(info.filename)) for info in archive.infolist()]
+
+    temp_path = ssp_path.with_suffix(".tmp")
+    with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for info, data in entries:
+            if info.filename == "SystemStructure.ssd":
+                data = add_annotation(data)
+            archive.writestr(info, data)
+    temp_path.replace(ssp_path)
 
 
 def _build_ssp(ssp_path: Path, fmu_paths: list[Path]) -> None:
@@ -135,44 +151,45 @@ def _build_ssp(ssp_path: Path, fmu_paths: list[Path]) -> None:
     from pyssp_standard.ssd import Component, Connection, Connector, System
 
     with SSP(ssp_path, mode="w") as ssp:
-        with ssp.system_structure as ssd:
-            source = Component(None)
+        with ssp.system_structure() as ssd:
+            source = Component()
             source.component_type = "application/x-fmu-sharedlibrary"
             source.name = "RampSource"
             source.source = "resources/RampSource.fmu"
             source.implementation = "CoSimulation"
-            source.connectors = [Connector(None, "y", "output")]
+            source.connectors = [Connector(name="y", kind="output", type_name="Real")]
 
-            integrator = Component(None)
+            integrator = Component()
             integrator.component_type = "application/x-fmu-sharedlibrary"
             integrator.name = "Integrator"
             integrator.source = "resources/Integrator.fmu"
             integrator.implementation = "CoSimulation"
             integrator.connectors = [
-                Connector(None, "u", "input"),
-                Connector(None, "y", "output"),
+                Connector(name="u", kind="input", type_name="Real"),
+                Connector(name="y", kind="output", type_name="Real"),
             ]
 
             connection = Connection(
-                None,
                 start_element="RampSource",
                 start_connector="y",
                 end_element="Integrator",
                 end_connector="u",
             )
 
-            system = System(None, "system")
+            system = System(name="system")
             system.elements.append(source)
             system.elements.append(integrator)
             system.connections.append(connection)
 
-            ssd.system = system
-            ssd.name = "RampToIntegrator"
-            ssd.version = "1.0"
-            ssd.default_experiment = _default_experiment()
+            ssd.xml.system = system
+            ssd.xml.name = "RampToIntegrator"
+            ssd.xml.version = "1.0"
+            ssd.xml.default_experiment = _default_experiment()
 
         for fmu_path in fmu_paths:
             ssp.add_resource(fmu_path)
+
+    _add_cosim_algorithm(ssp_path)
 
 
 @pytest.fixture(scope="session")

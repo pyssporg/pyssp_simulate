@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyssp_simulate"
-version = "0.1.0"
+version = "0.1.1"
 description = "Simulate SSP (System Structure and Parameterization) packages through a common interface and compare results across simulation engines."
 readme = "README.md"
 license = "MIT"
