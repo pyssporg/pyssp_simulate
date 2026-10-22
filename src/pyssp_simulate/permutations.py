@@ -5,8 +5,9 @@ sets of simulation parameters to sweep. Each numeric sweep field
 (``start_time``, ``stop_time``, ``step_size``, ``tolerance``) accepts a
 scalar, a list of values, or ``null``; the executed runs are the cartesian
 product of all the sets, each executed with every configured backend.
-Whenever two or more backends produce a result, the results are compared
-against the first backend that ran (in configured order).
+Whenever two or more backends produce a result, the results are measured
+against the first backend that ran (in configured order). Judgment is not
+performed here: verdicts belong to ``pyssp_vv.judge``.
 
 Full schema -- only ``ssp`` is required, every other key is optional::
 
@@ -17,7 +18,6 @@ Full schema -- only ``ssp`` is required, every other key is optional::
         "stop_time": [0.05, 0.1],
         "step_size": [0.001, null],
         "tolerance": null,
-        "compare": {"atol": 1e-6, "rtol": 0.0},
         "output_dir": "results"
     }
 
@@ -33,7 +33,6 @@ Key semantics:
   default (``0.0`` / ``1.0``).
 * ``step_size`` / ``tolerance``: scalar, list, or ``null``; ``null`` (and
   ``null`` list entries) let each backend pick its own default.
-* ``compare``: tolerances used to judge the cross-backend comparison.
 * ``output_dir``: directory for the run artifacts, or ``null`` to keep
   everything in memory.
 
@@ -41,25 +40,26 @@ The example above describes 2 stop times x 2 step sizes = 4 permutations
 for each of the two backends. With ``output_dir`` set, permutation ``i``
 writes ``<output_dir>/perm_<i>/<backend>.csv`` for every backend that
 ran, a ``<output_dir>/perm_<i>/spec.json`` manifest and -- when two or
-more backends produced results -- the cross-backend metrics as
-``<output_dir>/perm_<i>/metrics.csv``. Indices are formatted with four
-digits (``perm_0000``, ``perm_0001``, ...).
+more backends produced results and ``pyssp-vv[measure]`` is installed --
+the cross-backend metrics as ``<output_dir>/perm_<i>/metrics.csv``. Indices
+are formatted with four digits (``perm_0000``, ``perm_0001``, ...).
 
-Unknown keys are rejected with :class:`ValueError` (typo protection),
-including unknown keys inside ``compare``. An empty set (for example
-``"stop_time": []``) produces zero permutations; :func:`run_permutations`
-returns an empty list and callers decide how to treat that.
+Unknown keys are rejected with :class:`ValueError` (typo protection). An
+empty set (for example ``"stop_time": []``) produces zero permutations;
+:func:`run_permutations` returns an empty list and callers decide how to
+treat that.
 """
 
 from __future__ import annotations
 
+import csv
 import json
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pyssp_simulate.compare import ComparisonReport, compare
 from pyssp_simulate.interface import (
     BackendNotAvailableError,
     backend_names,
@@ -67,6 +67,9 @@ from pyssp_simulate.interface import (
 )
 from pyssp_simulate.result import SimulationResult
 from pyssp_simulate.spec import SimulationSpec, spec_summary
+
+if TYPE_CHECKING:
+    from pyssp_vv.measure import Comparison
 
 #: Keys accepted at the top level of a permutation config JSON file.
 _CONFIG_KEYS = frozenset(
@@ -77,24 +80,9 @@ _CONFIG_KEYS = frozenset(
         "stop_time",
         "step_size",
         "tolerance",
-        "compare",
         "output_dir",
     }
 )
-
-
-@dataclass(frozen=True)
-class ComparisonSettings:
-    """Tolerances used to judge cross-backend agreement.
-
-    :param atol: absolute tolerance on each signal's max absolute error.
-    :param rtol: relative tolerance, scaled by the reference signal's peak
-        absolute value (see
-        :meth:`~pyssp_simulate.compare.PairReport.passed`).
-    """
-
-    atol: float = 1e-6
-    rtol: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -110,8 +98,6 @@ class PermutationConfig:
         backend pick its own default.
     :param tolerances: solver/iteration tolerances to sweep; ``None``
         entries let each backend pick its own default.
-    :param comparison: tolerances for the cross-backend pass/fail
-        verdict.
     :param output_dir: directory for the per-permutation artifacts, or
         ``None`` to keep everything in memory.
 
@@ -125,7 +111,6 @@ class PermutationConfig:
     stop_times: tuple[float, ...] = (1.0,)
     step_sizes: tuple[float | None, ...] = (None,)
     tolerances: tuple[float | None, ...] = (None,)
-    comparison: ComparisonSettings = ComparisonSettings()
     output_dir: Path | None = None
 
     def __post_init__(self) -> None:
@@ -161,20 +146,6 @@ def _optional_float_values(raw: object, key: str) -> tuple[float | None, ...]:
     if isinstance(raw, list):
         return tuple(None if value is None else _as_float(value, key) for value in raw)
     raise ValueError(f"'{key}' must be a number, a list, or null")
-
-
-def _comparison_settings(raw: object) -> ComparisonSettings:
-    if raw is None:
-        return ComparisonSettings()
-    if not isinstance(raw, dict):
-        raise ValueError("'compare' must be an object with 'atol' and/or 'rtol'")
-    unknown = sorted(set(raw) - {"atol", "rtol"})
-    if unknown:
-        raise ValueError(f"Unknown key(s) in 'compare': {', '.join(unknown)}")
-    return ComparisonSettings(
-        atol=_as_float(raw.get("atol", 1e-6), "compare.atol"),
-        rtol=_as_float(raw.get("rtol", 0.0), "compare.rtol"),
-    )
 
 
 def _config_from_dict(data: dict) -> PermutationConfig:
@@ -214,7 +185,6 @@ def _config_from_dict(data: dict) -> PermutationConfig:
         stop_times=_float_values(data.get("stop_time"), "stop_time", 1.0),
         step_sizes=_optional_float_values(data.get("step_size"), "step_size"),
         tolerances=_optional_float_values(data.get("tolerance"), "tolerance"),
-        comparison=_comparison_settings(data.get("compare")),
         output_dir=output_dir,
     )
 
@@ -261,28 +231,19 @@ class PermutationRun:
 
     :param spec: the simulation request that was run.
     :param results: backend name -> result, in configured backend order.
-    :param report: cross-backend comparison (reference is the first
-        backend that ran), or ``None`` when fewer than two backends
+    :param measurements: one comparison per candidate backend against the
+        first backend that ran, or ``None`` when fewer than two backends
         produced a result.
     :param output_dir: directory the run's artifacts were written to, or
         ``None`` when results are kept in memory only.
     :param skipped: backend name -> reason it could not run.
-    :param comparison: tolerances applied by :attr:`passed`.
     """
 
     spec: SimulationSpec
     results: dict[str, SimulationResult]
-    report: ComparisonReport | None
+    measurements: tuple[Comparison, ...] | None
     output_dir: Path | None
     skipped: dict[str, str]
-    comparison: ComparisonSettings = ComparisonSettings()
-
-    @property
-    def passed(self) -> bool | None:
-        """Whether the run's comparison passed, or ``None`` without a report."""
-        if self.report is None:
-            return None
-        return self.report.passed(atol=self.comparison.atol, rtol=self.comparison.rtol)
 
     def summary(self) -> dict:
         """A compact, JSON-friendly description of the run."""
@@ -290,10 +251,50 @@ class PermutationRun:
             "spec": spec_summary(self.spec),
             "backends": list(self.results),
             "skipped": dict(self.skipped),
-            "report": self.report.summary() if self.report is not None else None,
-            "passed": self.passed,
+            "measurements": (
+                [item.to_dict() for item in self.measurements]
+                if self.measurements is not None
+                else None
+            ),
             "output_dir": str(self.output_dir) if self.output_dir is not None else None,
         }
+
+
+def _measure(results: dict[str, SimulationResult]) -> tuple[Comparison, ...]:
+    """Measure every result against the first one, using ``pyssp_vv``.
+
+    This is a convenience inside the package: the import is local so that
+    ``pyssp_simulate`` installs and imports without the measurement extra. The
+    surface is not re-exported, and judgment is not performed here.
+    """
+    try:
+        from pyssp_vv.measure import Trajectory, compare_many
+    except ImportError as exc:  # pragma: no cover - depends on the extra
+        raise ImportError(
+            "Cross-backend measurement requires 'pyssp-vv[measure]'. "
+            "Install it, or run with a single backend."
+        ) from exc
+
+    trajectories = [
+        Trajectory(
+            time=result.time,
+            channels={signal: result[signal] for signal in result.signals},
+            label=name,
+        )
+        for name, result in results.items()
+    ]
+    return compare_many(trajectories)
+
+
+def _write_metrics(path: Path, measurements: Sequence[Comparison]) -> Path:
+    rows = [row for item in measurements for row in item.rows()]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(rows[0]) if rows else ["signal"]
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
 
 
 def _run_permutation(
@@ -313,7 +314,7 @@ def _run_permutation(
         except BackendNotAvailableError as error:
             skipped[name] = str(error)
 
-    report = compare(list(results.values())) if len(results) >= 2 else None
+    measurements = _measure(results) if len(results) >= 2 else None
 
     run_dir: Path | None = None
     if config.output_dir is not None:
@@ -322,16 +323,15 @@ def _run_permutation(
         (run_dir / "spec.json").write_text(json.dumps(spec_summary(spec), indent=2))
         for name, result in results.items():
             result.write_csv(run_dir / f"{name}.csv")
-        if report is not None:
-            report.write_csv(run_dir / "metrics.csv")
+        if measurements is not None:
+            _write_metrics(run_dir / "metrics.csv", measurements)
 
     return PermutationRun(
         spec=spec,
         results=results,
-        report=report,
+        measurements=measurements,
         output_dir=run_dir,
         skipped=skipped,
-        comparison=config.comparison,
     )
 
 

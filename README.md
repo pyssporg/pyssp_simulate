@@ -1,8 +1,10 @@
 # pyssp_simulate
 
 Simulate [SSP](https://ssp-standard.org) (System Structure and Parameterization)
-packages through a single interface, with pluggable simulation engines, and
-compare the results across engines.
+packages through a single interface, with pluggable simulation engines.
+Measurement and judgment of the results live in
+[pyssp_vv](https://github.com/pyssporg/pyssp_vv); this package runs the
+simulations and normalises what they produce.
 
 pyssp_simulate is a sibling of pyssp_standard in the
 [pyssporg](https://github.com/pyssporg) organization.
@@ -138,20 +140,19 @@ the cosim binary are not on PyPI at all.
 ## Quickstart
 
 ```python
-from pyssp_simulate import SimulationSpec, simulate_all, compare
+from pyssp_simulate import SimulationSpec, simulate_all
 
 spec = SimulationSpec(ssp="model.ssp", start_time=0.0, stop_time=1.0, step_size=0.001)
 results = simulate_all(spec)          # every backend that is installed
-report = compare(results)             # first result is the reference
-print(report.summary())
+for name, result in results.items():
+    print(name, len(result.signals), len(result))
 ```
 
 `simulate_all` runs every registered backend whose engine is installed and
 emits a `RuntimeWarning` for each one it has to skip, so a base install (FMPy
-only) yields a single result. `compare` needs at least two results — with
-only one backend installed there is nothing to compare yet. The mapping
-returned by `simulate_all` is accepted by `compare` directly, as shown; the
-first backend that ran acts as the reference.
+only) yields a single result. Each result is a `SimulationResult` with a shared
+time base and canonical `<component>.<signal>` names, ready to be handed to
+`pyssp_vv.measure`.
 
 To run a single backend:
 
@@ -215,53 +216,23 @@ archives at runtime.
 substitutes `1e-4` when left at `None`); FMPy and cosim have no tolerance
 setting and ignore it.
 
-## Comparing results
+## Measurement and judgment
 
-`compare` measures every result against the **first** one, which acts as the
-reference. Candidate signals are resampled onto the reference time grid by
-linear interpolation, then per-signal error metrics are computed:
-`max_abs_error`, `mean_abs_error`, `rmse`, and the reference and candidate
-min/max.
+Comparison is not part of this package. `pyssp_simulate` ends when a
+`SimulationResult` exists.
 
-```python
-report.passed(atol=1e-3, rtol=1e-6)  # every signal within tolerance?
-report.write_csv("metrics.csv")      # per-signal metrics of every pair
-report.summary()                     # dict summary for logging/JSON
-```
-
-A signal passes when its `max_abs_error` is at most
-`atol + rtol * max(|reference_min|, |reference_max|)`.
-
-### Reference trajectories
-
-`compare_to_reference` compares results against a trusted CSV instead of
-another engine. Reference CSVs often name columns
-`default.<model>.<signal>`; `model_name` strips that prefix. Pass a
-`ComparisonWindow` when every run must be judged on one explicit grid rather
-than the reference file's own samples:
+| Question | Package |
+| --- | --- |
+| How far apart are two trajectories, under which alignment and normalisation? | `pyssp_vv.measure` |
+| Is that acceptable, and why? | `pyssp_vv.judge` |
 
 ```python
-from pyssp_simulate import ComparisonWindow, compare_to_reference
+from pyssp_vv.measure import Trajectory, compare
 
-report = compare_to_reference(
-    "BouncingBall-cs.csv",
-    results,
-    model_name="BouncingBall",
-    signals=["h", "v"],
-    window=ComparisonWindow(start_time=0.0, stop_time=3.0, step_size=0.001),
-)
+reference = Trajectory(a.time, {s: a[s] for s in a.signals}, label="fmpy")
+candidate = Trajectory(b.time, {s: b[s] for s in b.signals}, label="omsimulator")
+metrics = compare(reference, candidate)
 ```
-
-The CLI accepts the same contract:
-
-```console
-$ pyssp-simulate compare result.csv --reference BouncingBall-cs.csv \
-    --model-name BouncingBall --signals h,v --strip-prefix fmu. \
-    --start-time 0 --stop-time 3 --step-size 0.001 --atol 1e-3
-```
-
-Use `--strip-prefix` when an engine writes a generic component prefix such as
-`fmu.h`; reference comparison needs both sides to use the same signal names.
 
 How closely two engines agree is limited by the communication step size and
 by how each master sequences component inputs and outputs — expect
@@ -282,7 +253,6 @@ runs are the cartesian product, each run with every configured backend:
     "backends": ["fmpy", "omsimulator"],
     "stop_time": [1.0, 10.0],
     "step_size": [0.001, 0.01],
-    "compare": {"atol": 1e-3, "rtol": 0.0},
     "output_dir": "runs"
 }
 ```
@@ -297,13 +267,14 @@ from pyssp_simulate import load_permutation_config, run_permutations
 
 runs = run_permutations(load_permutation_config("sweep.json"))
 for run in runs:
-    print(run.summary()["passed"])   # True/False, or None without a comparison
+    print(run.summary()["measurements"])  # metrics, or None without a second backend
 ```
 
 With `output_dir` set, permutation `i` writes `runs/perm_<i>/<backend>.csv`
 for every backend that ran, a `spec.json` manifest, and — when two or more
-backends produced results — the cross-backend metrics as
-`runs/perm_<i>/metrics.csv`.
+backends produced results — cross-backend metrics as
+`runs/perm_<i>/metrics.csv`. Measuring requires `pyssp-vv[measure]`; without
+it, permutations still run and the measurement is omitted.
 
 ## Backend registry
 
@@ -325,7 +296,6 @@ The package installs a `pyssp-simulate` console script.
 ```console
 $ pyssp-simulate run model.ssp --backend fmpy --stop-time 10 --step-size 0.001 --output result.csv
 $ pyssp-simulate backends
-$ pyssp-simulate compare fmpy.csv omsimulator.csv --atol 1e-3 --output metrics.csv
 $ pyssp-simulate run-all sweep.json
 ```
 
@@ -336,14 +306,10 @@ first available backend), `--start-time`, `--stop-time` (default `1.0`),
 
 `backends` lists every registered backend and its availability.
 
-`compare` takes two or more result CSVs, using the first as the reference. It
-accepts `--atol` and `--rtol` for the pass/fail tolerance, `--signals` to
-restrict the comparison to a comma-separated subset of signals, `--output`
-to write per-signal metrics, and `--json` to print the summary as JSON. It
-exits with code 0 when all signals pass the tolerance and 1 otherwise.
-
 `run-all` executes every permutation of a config file, printing one line per
-run and a final summary, and exits nonzero when any compared run fails.
+run and a final summary. It reports metrics when two or more backends produced
+a result; it never returns a pass/fail verdict. Measurement and judgment belong
+to `pyssp_vv`.
 
 ## Development
 

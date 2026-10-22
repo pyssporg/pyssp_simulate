@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from pyssp_vv.measure import Trajectory, compare
 from tests.conftest import (
     START_TIME,
     STEP_SIZE,
@@ -26,7 +27,6 @@ from tests.conftest import (
 )
 
 from pyssp_simulate import SimulationSpec, available_backends, simulate, simulate_all
-from pyssp_simulate.compare import compare
 from pyssp_simulate.interface import get_simulator
 
 # fmpy's SSP master records every sample after stepping, i.e. the value
@@ -139,9 +139,12 @@ def test_cross_backend_agreement(backend, spec_kwargs, ssp_archive: Path):
     reference = simulate(SimulationSpec(ssp=ssp_archive, **spec_kwargs), backend="fmpy")
     candidate = simulate(SimulationSpec(ssp=ssp_archive, **spec_kwargs), backend=backend)
 
-    report = compare([reference, candidate], signals=["Integrator.y"])
-    assert report.pairs[0].max_abs_error < CROSS_BACKEND_ATOL
-    assert report.pairs[0].passed(atol=CROSS_BACKEND_ATOL)
+    report = compare(
+        Trajectory(reference.time, {name: reference[name] for name in reference.signals}),
+        Trajectory(candidate.time, {name: candidate[name] for name in candidate.signals}),
+        signals=["Integrator.y"],
+    )
+    assert report.signals[0].max_abs_error < CROSS_BACKEND_ATOL
 
 
 def test_get_simulator_returns_correct_class():

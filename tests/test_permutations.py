@@ -15,15 +15,11 @@ import pytest
 from pyssp_simulate import available_backends
 from pyssp_simulate.cli import main
 from pyssp_simulate.permutations import (
-    ComparisonSettings,
     PermutationConfig,
     iter_permutation_specs,
     load_permutation_config,
     run_permutations,
 )
-
-#: Tolerances used by the gated cross-backend comparison.
-COMPARE_ATOL = 1e-2
 
 
 def _backend_ready(name: str) -> bool:
@@ -55,7 +51,6 @@ def test_load_minimal_config_uses_defaults(tmp_path: Path, ssp_archive: Path):
     assert config.stop_times == (1.0,)
     assert config.step_sizes == (None,)
     assert config.tolerances == (None,)
-    assert config.comparison == ComparisonSettings()
     assert config.output_dir is None
 
 
@@ -69,7 +64,6 @@ def test_load_normalizes_scalars_lists_and_nulls(tmp_path: Path):
             "stop_time": [0.05, 0.1],
             "step_size": [0.001, None],
             "tolerance": None,
-            "compare": {"atol": 1e-3, "rtol": 1e-5},
             "output_dir": "results",
         },
     )
@@ -80,7 +74,6 @@ def test_load_normalizes_scalars_lists_and_nulls(tmp_path: Path):
     assert config.stop_times == (0.05, 0.1)
     assert config.step_sizes == (0.001, None)
     assert config.tolerances == (None,)
-    assert config.comparison == ComparisonSettings(atol=1e-3, rtol=1e-5)
     assert config.output_dir == Path("results")
 
 
@@ -89,6 +82,16 @@ def test_load_rejects_unknown_keys(tmp_path: Path, ssp_archive: Path):
         tmp_path / "typo.json", {"ssp": str(ssp_archive), "stop_tme": 0.1}
     )
     with pytest.raises(ValueError, match="stop_tme"):
+        load_permutation_config(config_path)
+
+
+def test_load_rejects_the_removed_compare_key(tmp_path: Path, ssp_archive: Path):
+    """Judgment moved to pyssp_vv; the old tolerance block fails loudly."""
+    config_path = _write_config(
+        tmp_path / "compare.json",
+        {"ssp": str(ssp_archive), "compare": {"atol": 1e-3}},
+    )
+    with pytest.raises(ValueError, match="compare"):
         load_permutation_config(config_path)
 
 
@@ -150,8 +153,7 @@ def test_run_permutations_records_skipped_backends(tmp_path: Path, monkeypatch):
     run = runs[0]
     assert run.results == {}
     assert run.skipped == {"fmpy": "engine not installed"}
-    assert run.report is None
-    assert run.passed is None
+    assert run.measurements is None
     assert run.summary()["skipped"] == {"fmpy": "engine not installed"}
     # The manifest is still written even when no backend ran.
     assert (run.output_dir / "spec.json").is_file()
@@ -181,8 +183,7 @@ def test_run_permutations_writes_artifacts(tmp_path: Path, ssp_archive: Path):
         assert set(run.results) == {"fmpy"}
         assert run.skipped == {}
         assert len(run.results["fmpy"]) > 0
-        assert run.report is None
-        assert run.passed is None
+        assert run.measurements is None
         assert (run_dir / "fmpy.csv").is_file()
         assert (run_dir / "spec.json").is_file()
         assert not (run_dir / "metrics.csv").exists()
@@ -192,20 +193,18 @@ def test_run_permutations_writes_artifacts(tmp_path: Path, ssp_archive: Path):
             "spec",
             "backends",
             "skipped",
-            "report",
-            "passed",
+            "measurements",
             "output_dir",
         }
         assert summary["backends"] == ["fmpy"]
         assert summary["skipped"] == {}
-        assert summary["report"] is None
-        assert summary["passed"] is None
+        assert summary["measurements"] is None
         assert summary["output_dir"] == str(run_dir)
         assert summary["spec"] == json.loads((run_dir / "spec.json").read_text())
 
 
 @pytest.mark.skipif(not _backend_ready("omsimulator"), reason="OMSimulator not installed")
-def test_run_permutations_compares_backends(tmp_path: Path, ssp_archive: Path):
+def test_run_permutations_measures_backends(tmp_path: Path, ssp_archive: Path):
     config_path = _write_config(
         tmp_path / "config.json",
         {
@@ -213,7 +212,6 @@ def test_run_permutations_compares_backends(tmp_path: Path, ssp_archive: Path):
             "backends": ["fmpy", "omsimulator"],
             "stop_time": 0.05,
             "step_size": 0.001,
-            "compare": {"atol": COMPARE_ATOL},
             "output_dir": str(tmp_path / "results"),
         },
     )
@@ -222,16 +220,16 @@ def test_run_permutations_compares_backends(tmp_path: Path, ssp_archive: Path):
     run = runs[0]
     assert set(run.results) == {"fmpy", "omsimulator"}
     assert run.skipped == {}
-    assert run.report is not None
-    assert run.passed is True
-    assert run.report.pairs[0].reference_backend == "fmpy"
+    assert run.measurements is not None
+    assert run.measurements[0].reference_label == "fmpy"
+    assert run.measurements[0].candidate_label == "omsimulator"
     for name in run.results:
         assert (run.output_dir / f"{name}.csv").is_file()
     assert (run.output_dir / "metrics.csv").is_file()
     assert (run.output_dir / "spec.json").is_file()
-    report_summary = run.report.summary()
-    assert report_summary["backends"] == ["fmpy", "omsimulator"]
-    assert report_summary["pairs"]
+    summary = run.summary()
+    assert summary["backends"] == ["fmpy", "omsimulator"]
+    assert summary["measurements"][0]["candidate_label"] == "omsimulator"
 
 
 # --- CLI -------------------------------------------------------------------
@@ -252,7 +250,6 @@ def test_cli_run_all_single_backend(tmp_path: Path, ssp_archive: Path, capsys):
     assert "perm_0000" in out
     assert "fmpy" in out
     assert "total permutations=1" in out
-    assert "failed=0" in out
 
 
 def test_cli_run_all_zero_permutations(tmp_path: Path, ssp_archive: Path, capsys):

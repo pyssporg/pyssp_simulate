@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyssp_simulate"
-version = "0.1.1"
-description = "Simulate SSP (System Structure and Parameterization) packages through a common interface and compare results across simulation engines."
+version = "0.2.0"
+description = "Simulate SSP (System Structure and Parameterization) packages through a common interface and normalise the results."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -37,11 +37,17 @@ dependencies = [
 # current platforms (e.g. Ubuntu 24.04) but can fail on distributions
 # whose build artifacts are no longer published. See README.
 omsimulator = ["OMSimulator>=3.0.0.post115"]
-all = ["pyssp_simulate[omsimulator]"]
+# Cross-backend measurement inside permutation runs. pyssp_vv is not on PyPI
+# yet, so this extra documents the intent; install it from the sibling
+# checkout during development (see the repository README).
+measure = ["pyssp-vv[measure]>=0.1"]
+all = ["pyssp_simulate[omsimulator,measure]"]
 dev = [
     "pytest>=7",
     "ruff",
     "pyssp-standard>=0.9.1",
+    # The test suite measures with pyssp_vv; install it from the sibling
+    # checkout until it is published: pip install -e ../pyssp_vv[measure]
 ]
 
 [project.scripts]
