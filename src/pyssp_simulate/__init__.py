@@ -7,6 +7,9 @@ Public API:
 * :class:`SimulationResult` -- normalized result (structured NumPy array),
   with CSV helpers :func:`read_result_csv` / :func:`write_result_csv` and
   :func:`canonicalize_signal`.
+* :class:`RuntimeSSP` / :func:`prepare_runtime_ssp` -- normalized SSP archive
+  and unpacked root for engine adapters and consumers that must invoke an
+  engine directly.
 * :class:`PermutationConfig` / :func:`load_permutation_config` /
   :func:`iter_permutation_specs` / :func:`run_permutations` /
   :class:`PermutationRun` -- batch sweeps described by a JSON config.
@@ -55,6 +58,7 @@ from pyssp_simulate.result import (
     read_result_csv,
     write_result_csv,
 )
+from pyssp_simulate.runtime import RuntimeSSP, prepare_runtime_ssp
 from pyssp_simulate.spec import SimulationSpec, spec_summary
 
 __version__ = "0.2.0"
@@ -64,6 +68,7 @@ __all__ = [
     "BackendNotAvailableError",
     "PermutationConfig",
     "PermutationRun",
+    "RuntimeSSP",
     "SimulationResult",
     "SimulationSpec",
     "Simulator",
@@ -74,6 +79,7 @@ __all__ = [
     "get_simulator",
     "iter_permutation_specs",
     "load_permutation_config",
+    "prepare_runtime_ssp",
     "read_result_csv",
     "run_permutations",
     "simulate",
