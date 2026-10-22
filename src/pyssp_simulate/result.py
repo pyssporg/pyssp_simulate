@@ -56,6 +56,11 @@ def canonicalize_signal(
     while len(parts) > 2 and parts[0] in droppable:
         parts.pop(0)
 
+    # ``fmu`` is a generic container prefix even when only one signal segment
+    # follows it (engines emit both ``fmu.h`` and ``fmu.Component.h``).
+    if len(parts) >= 2 and parts[0] == "fmu":
+        parts.pop(0)
+
     return ".".join(parts)
 
 

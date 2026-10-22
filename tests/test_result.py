@@ -32,6 +32,8 @@ class TestCanonicalizeSignal:
         assert canonicalize_signal("root.BouncingBall.h") == "BouncingBall.h"
         assert canonicalize_signal("model.root.BouncingBall.h") == "BouncingBall.h"
         assert canonicalize_signal("fmu.BouncingBall.h") == "BouncingBall.h"
+        assert canonicalize_signal("fmu.h") == "h"
+        assert canonicalize_signal("system.fmu.h", "system") == "h"
 
     def test_root_system_name_is_dropped(self):
         assert canonicalize_signal("system.BouncingBall.h", "system") == "BouncingBall.h"
