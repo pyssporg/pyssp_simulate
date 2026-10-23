@@ -31,6 +31,15 @@ class SimulationSpec:
         ``None``, the result is only kept in memory.
     :param working_dir: optional directory for backend scratch files. When
         ``None``, a temporary directory is used and removed afterwards.
+    :param fixed_step: OMSimulator only. When ``False``, only the logging
+        interval is set and the master keeps its event handling; when
+        ``True``, :meth:`effective_step_size` is also forced as fixed step.
+        Ignored by backends without that choice (fmpy, ssp4sim, cosim).
+    :param validate_ssd: FMPy only. ``False`` skips FMPy's bundled SSP 1.0
+        schema validation for the runtime call. Other backends ignore it.
+    :param omsimulator_options: OMSimulator only. Extra engine command-line
+        options applied before the run. Empty means "whatever the backend
+        already applies".
     :raises FileNotFoundError: if ``ssp`` does not exist.
     :raises ValueError: if ``ssp`` is a directory without a top-level
         ``.ssd`` file, if ``stop_time`` is not greater than ``start_time``,
@@ -44,6 +53,9 @@ class SimulationSpec:
     tolerance: float | None = None
     result_file: Path | None = None
     working_dir: Path | None = None
+    fixed_step: bool = True
+    validate_ssd: bool = True
+    omsimulator_options: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "ssp", Path(self.ssp))
@@ -51,6 +63,7 @@ class SimulationSpec:
             object.__setattr__(self, "result_file", Path(self.result_file))
         if self.working_dir is not None:
             object.__setattr__(self, "working_dir", Path(self.working_dir))
+        object.__setattr__(self, "omsimulator_options", tuple(self.omsimulator_options))
 
         if not self.ssp.exists():
             raise FileNotFoundError(f"SSP path does not exist: {self.ssp}")
@@ -109,4 +122,7 @@ def spec_summary(spec: SimulationSpec) -> dict:
         "tolerance": spec.tolerance,
         "result_file": str(spec.result_file) if spec.result_file else None,
         "working_dir": str(spec.working_dir) if spec.working_dir else None,
+        "fixed_step": spec.fixed_step,
+        "validate_ssd": spec.validate_ssd,
+        "omsimulator_options": list(spec.omsimulator_options),
     }

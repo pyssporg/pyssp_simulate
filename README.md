@@ -204,17 +204,30 @@ spec = SimulationSpec(
     tolerance=None,     # optional solver/iteration tolerance
     result_file=None,   # write the result CSV here when set
     working_dir=None,   # backend scratch directory when set
+    fixed_step=True,    # OMSimulator: also force setFixedStepSize(step)
+    validate_ssd=True,  # FMPy: keep its bundled SSD schema validation
+    omsimulator_options=(),  # OMSimulator engine command-line options
 )
 ```
 
 `ssp` accepts either an `.ssp` archive or an unpacked SSP directory (a
 directory with a top-level `.ssd` file). Unpacked FMU directories — a directory
 containing `modelDescription.xml` — are automatically repackaged into `.fmu`
-archives at runtime.
+archives at runtime. `prepare_runtime_ssp(source, repackage_fmus=False)` keeps
+them as directories in both the runtime root and the archive, for engines that
+load the unpacked layout natively (the ssp4sim backend does).
 
 `tolerance` is honored by the OMSimulator and ssp4sim backends (ssp4sim
 substitutes `1e-4` when left at `None`); FMPy and cosim have no tolerance
 setting and ignore it.
+
+`fixed_step` is an OMSimulator choice: with `False` the backend sets only the
+logging interval and lets the master keep its event handling; with `True` it
+also calls `setFixedStepSize`. `validate_ssd=False` skips FMPy's bundled SSP 1.0
+schema validation for the runtime call. `omsimulator_options` are passed to
+OMSimulator's `Capi.setCommandLineOption` before the package is loaded; an
+option the engine rejects raises `RuntimeError`. Backends without the
+corresponding choice ignore these fields.
 
 ## Measurement and judgment
 

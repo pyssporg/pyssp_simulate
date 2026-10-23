@@ -111,3 +111,45 @@ def test_spec_summary_roundtrip(tmp_path: Path):
     assert summary["stop_time"] == 2.0
     assert summary["step_size"] == 0.1
     assert summary["result_file"] is None
+
+
+def test_engine_fields_default(tmp_path: Path):
+    ssp = tmp_path / "model.ssp"
+    ssp.write_bytes(b"")
+    spec = SimulationSpec(ssp=ssp, start_time=0.0, stop_time=1.0)
+    assert spec.fixed_step is True
+    assert spec.validate_ssd is True
+    assert spec.omsimulator_options == ()
+
+
+def test_omsimulator_options_are_normalised_to_a_tuple(tmp_path: Path):
+    ssp = tmp_path / "model.ssp"
+    ssp.write_bytes(b"")
+    spec = SimulationSpec(
+        ssp=ssp,
+        start_time=0.0,
+        stop_time=1.0,
+        fixed_step=False,
+        validate_ssd=False,
+        omsimulator_options=["--wallTime=true", "--emitEvents=false"],
+    )
+    assert spec.fixed_step is False
+    assert spec.validate_ssd is False
+    assert spec.omsimulator_options == ("--wallTime=true", "--emitEvents=false")
+
+
+def test_spec_summary_reports_engine_fields(tmp_path: Path):
+    ssp = tmp_path / "model.ssp"
+    ssp.write_bytes(b"")
+    spec = SimulationSpec(
+        ssp=ssp,
+        start_time=0.0,
+        stop_time=1.0,
+        fixed_step=False,
+        validate_ssd=False,
+        omsimulator_options=("--wallTime=true",),
+    )
+    summary = spec_summary(spec)
+    assert summary["fixed_step"] is False
+    assert summary["validate_ssd"] is False
+    assert summary["omsimulator_options"] == ["--wallTime=true"]

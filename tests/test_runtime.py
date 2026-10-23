@@ -136,6 +136,27 @@ class TestPrepareRuntimeSsp:
             )
             assert runtime.container_names == ("RampToIntegrator", "system")
 
+    def test_directory_input_keeps_unpacked_fmus_when_asked(self, ssp_dir: Path):
+        with prepare_runtime_ssp(ssp_dir, repackage_fmus=False) as runtime:
+            resources = runtime.root / "resources"
+            assert (resources / "RampSource" / "modelDescription.xml").is_file()
+            assert (resources / "Integrator" / "modelDescription.xml").is_file()
+            assert not (resources / "RampSource.fmu").exists()
+
+            with zipfile.ZipFile(runtime.archive) as archive:
+                names = set(archive.namelist())
+            assert "resources/RampSource/modelDescription.xml" in names
+            assert "resources/Integrator/modelDescription.xml" in names
+            assert "resources/RampSource.fmu" not in names
+
+    def test_directory_input_repackages_by_default(self, ssp_dir: Path):
+        with prepare_runtime_ssp(ssp_dir) as runtime:
+            assert not (runtime.root / "resources" / "RampSource").exists()
+            with zipfile.ZipFile(runtime.archive) as archive:
+                names = set(archive.namelist())
+            assert "resources/RampSource.fmu" in names
+            assert not any(name.startswith("resources/RampSource/") for name in names)
+
     def test_original_input_is_not_modified(self, ssp_dir: Path):
         before = sorted(p.relative_to(ssp_dir) for p in ssp_dir.rglob("*"))
         with prepare_runtime_ssp(ssp_dir):

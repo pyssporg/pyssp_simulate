@@ -115,13 +115,22 @@ def _zip_tree(root: Path, archive_path: Path) -> None:
 
 
 @contextmanager
-def prepare_runtime_ssp(source: Path | str) -> Iterator[RuntimeSSP]:
+def prepare_runtime_ssp(
+    source: Path | str,
+    *,
+    repackage_fmus: bool = True,
+) -> Iterator[RuntimeSSP]:
     """Normalize an SSP input into a :class:`RuntimeSSP`.
 
     Accepts either an ``.ssp`` zip archive or an unpacked SSP directory
-    (whose unpacked FMUs are repackaged). The runtime copy lives in a
-    temporary directory that is removed when the context exits; nothing
+    (whose unpacked FMUs are repackaged by default). The runtime copy lives
+    in a temporary directory that is removed when the context exits; nothing
     in the original input is modified.
+
+    :param repackage_fmus: when ``False``, unpacked FMU directories are kept
+        as directories in both the runtime root and the runtime archive.
+        Engines that load the unpacked layout natively (ssp4sim) need this;
+        the default preserves the normalized archive.
     """
     source = Path(source)
     if not source.exists():
@@ -141,7 +150,8 @@ def prepare_runtime_ssp(source: Path | str) -> Iterator[RuntimeSSP]:
         else:
             root = work / "ssp"
             shutil.copytree(source, root)
-            repackage_unpacked_fmus(root)
+            if repackage_fmus:
+                repackage_unpacked_fmus(root)
             archive = work / "runtime.ssp"
             _zip_tree(root, archive)
 
