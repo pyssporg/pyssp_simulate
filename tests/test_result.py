@@ -73,10 +73,24 @@ class TestCanonicalizeSignal:
 class TestArrayFromColumns:
     def test_orders_fields(self):
         data = array_from_columns(
-            {"time": np.array([0.0, 1.0]), "a.b": np.array([1.0, 2.0])}
+            {
+                "time": np.array([0.0, 1.0]),
+                "b": np.array([1.0, 2.0]),
+                "a": np.array([3.0, 4.0]),
+            }
         )
-        assert data.dtype.names == ("time", "a.b")
+        assert data.dtype.names == ("time", "a", "b")
         assert len(data) == 2
+
+    def test_order_is_independent_of_insertion_order(self):
+        values = {
+            "time": np.array([0.0, 1.0]),
+            "b": np.array([1.0, 2.0]),
+            "a": np.array([3.0, 4.0]),
+        }
+        first = array_from_columns(dict(values))
+        second = array_from_columns(dict(reversed(list(values.items()))))
+        assert first.dtype.names == second.dtype.names
 
     def test_empty_columns_rejected(self):
         with pytest.raises(ValueError):
@@ -198,7 +212,7 @@ class TestReadDymolaMat:
     def test_decodes_names_and_data_sources(self, tmp_path: Path):
         data = read_dymola_mat(_write_mat(tmp_path / "dsres.mat"))
 
-        assert data.dtype.names == ("time", "speed", "constant", "negated")
+        assert data.dtype.names == ("time", "constant", "negated", "speed")
         np.testing.assert_allclose(data["time"], [0.0, 1.0, 2.0])
         np.testing.assert_allclose(data["speed"], [10.0, 20.0, 30.0])
         np.testing.assert_allclose(data["constant"], [5.0, 5.0, 5.0])

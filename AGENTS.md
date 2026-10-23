@@ -69,8 +69,8 @@ and result shape; measurement and judgment stay in `pyssp_vv`.
 
 ## Environment
 
-- Python >= 3.10. Backends whose engines are not installed are skipped
-  automatically.
+- Python >= 3.10. `simulate` raises when the named engine is not installed;
+  `simulate_all` and `run-all` skip unavailable backends and warn.
 - Run the tests with `python -m pytest -q` (use a repo-local `venv` when
   present); `ruff check src tests` for lint.
 - Integration tests need `omc` on `PATH` to build the two primitive FMUs; they

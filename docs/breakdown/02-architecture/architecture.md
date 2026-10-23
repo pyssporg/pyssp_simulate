@@ -22,3 +22,11 @@ runtime preparation ──► backend adapter ──► SimulationResult
   through public modules (`pyssp_vv.measure` for permutation reporting).
 - Measurement and judgment never cross into this package. `pyssp_vv.judge` is
   not imported or re-exported.
+- Backend selection is explicit. `simulate` runs the named backend;
+  `DEFAULT_BACKEND` applies only when the caller names none. An engine that is
+  missing raises `BackendNotAvailableError`; only `simulate_all` / `run-all`
+  skip unavailable backends, and they warn.
+- Result columns are canonical: `"time"` first, then signal names sorted, so a
+  column shared by two engines has the same name and the same relative
+  position. Engine-specific extra columns are allowed; engine-specific values
+  are never substituted for a value the caller did not give.

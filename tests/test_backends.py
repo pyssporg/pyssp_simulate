@@ -32,7 +32,13 @@ from tests.conftest import (
     analytic_source,
 )
 
-from pyssp_simulate import SimulationSpec, available_backends, simulate, simulate_all
+from pyssp_simulate import (
+    SimulationSpec,
+    available_backends,
+    backend_names,
+    simulate,
+    simulate_all,
+)
 from pyssp_simulate.backends.fmpy_backend import _get_connections
 from pyssp_simulate.backends.omsimulator_backend import OMSimulatorSimulator
 from pyssp_simulate.backends.ssp4sim_backend import (
@@ -159,6 +165,26 @@ def test_cross_backend_agreement(backend, spec_kwargs, ssp_archive: Path):
     assert report.signals[0].max_abs_error < CROSS_BACKEND_ATOL
 
 
+def test_common_columns_have_identical_order(spec):
+    """Shared columns line up across engines: ``time`` first, then sorted."""
+    ready = [name for name in backend_names() if _backend_ready(name)]
+    if not ready:
+        pytest.skip("no simulation backend available")
+    results = {name: simulate(spec, backend=name) for name in ready}
+
+    common = set.intersection(
+        *(set(result.data.dtype.names or ()) for result in results.values())
+    )
+    common_orders = {}
+    for name, result in results.items():
+        names = tuple(result.data.dtype.names or ())
+        assert names[0] == "time", (name, names)
+        assert tuple(sorted(result.signals)) == result.signals, (name, names)
+        common_orders[name] = tuple(field for field in names if field in common)
+
+    assert len(set(common_orders.values())) <= 1, common_orders
+
+
 def test_get_simulator_returns_correct_class():
     from pyssp_simulate.backends.fmpy_backend import FMPySimulator
 
@@ -245,6 +271,7 @@ def _install_ssp4sim_stub(monkeypatch: pytest.MonkeyPatch) -> dict:
         observed["unpacked_fmu"] = (
             runtime_root / "resources" / "Source" / "modelDescription.xml"
         ).is_file()
+        observed["tolerance"] = simulation.get("tolerance")
         Path(simulation["recording"]["result_file"]).write_text(
             "time,Source.y\n0.0,0.0\n1.0,1.0\n"
         )
@@ -271,16 +298,29 @@ def test_ssp4sim_uses_unpacked_fmus_and_cleans_diagnostics(
             start_time=0.0,
             stop_time=1.0,
             step_size=0.1,
+            tolerance=1e-3,
             working_dir=work,
         )
     )
 
     assert observed["unpacked_fmu"] is True
+    # The caller's tolerance is passed through verbatim, never substituted.
+    assert observed["tolerance"] == 1e-3
     assert not (observed["runtime_root"] / "resources" / "Source.fmu").exists()
     for name in DIAGNOSTIC_ARTIFACTS:
         assert not (work / name).exists()
     assert result.backend == "ssp4sim"
     assert any(path.name == "config.json" for path in result.artifacts)
+
+
+def test_ssp4sim_requires_an_explicit_tolerance(tmp_path: Path):
+    """No silent default: the engine requires the key, so the caller must pass it."""
+    ssp = _synthetic_ssp_dir(tmp_path)
+
+    with pytest.raises(ValueError, match="requires an explicit tolerance"):
+        SSP4SimSimulator().simulate(
+            SimulationSpec(ssp=ssp, start_time=0.0, stop_time=1.0, step_size=0.1)
+        )
 
 
 class _FakeOMInstance:

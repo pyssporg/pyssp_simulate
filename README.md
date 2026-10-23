@@ -43,15 +43,16 @@ or from a checkout:
 pip install .
 ```
 
-The base install includes FMPy, which installs reliably from PyPI on every
-platform, so the default backend works out of the box. FMPy's SSP support is
-intentionally simple: it records the values of the connectors declared in the
-SSD, simulates FMUs with a fixed-step Jacobi scheme, and validates SSD files
-against its bundled SSP 1.0 schema. Use the other backends for advanced SSP
-features.
+The base install ships FMPy, which installs reliably from PyPI on every
+platform. FMPy's SSP support is intentionally simple: it records the values of
+the connectors declared in the SSD, simulates FMUs with a fixed-step Jacobi
+scheme, and validates SSD files against its bundled SSP 1.0 schema. Use the
+other backends for advanced SSP features.
 
-`simulate(spec, backend="auto")` (the default) uses the first available backend
-in registry order: `fmpy`, `omsimulator`, `ssp4sim`, `cosim`.
+The default backend is `omsimulator`, which must be installed separately (see
+below). Naming no backend selects it; requesting any backend whose engine is
+not installed raises `BackendNotAvailableError` with an install hint. There is
+no automatic fallback to a different engine.
 
 Optional extras use the same syntax — `pip install ".[all]"` from a
 checkout, `pip install "pyssp_simulate[all] @ <release-wheel-url>"` from a
@@ -198,8 +199,8 @@ write_result_csv("dymola.csv", data)
 `result.artifacts` collects files worth keeping. Its contents are
 backend-dependent: every backend records the result CSV written through
 `result_file` or `write_csv`, and backends that drive external engines also
-record what they generated (for example ssp4sim's JSON config). The default
-FMPy backend runs in-process and produces no extra artifacts.
+record what they generated (for example ssp4sim's JSON config). The FMPy
+backend runs in-process and produces no extra artifacts.
 
 ## SimulationSpec
 
@@ -227,9 +228,10 @@ archives at runtime. `prepare_runtime_ssp(source, repackage_fmus=False)` keeps
 them as directories in both the runtime root and the archive, for engines that
 load the unpacked layout natively (the ssp4sim backend does).
 
-`tolerance` is honored by the OMSimulator and ssp4sim backends (ssp4sim
-substitutes `1e-4` when left at `None`); FMPy and cosim have no tolerance
-setting and ignore it.
+`tolerance` is honored by the OMSimulator and ssp4sim backends. No backend
+substitutes a value of its own: with `tolerance=None`, OMSimulator keeps its
+own default, while ssp4sim raises `ValueError` because its engine requires the
+key. FMPy and cosim have no tolerance setting and ignore it.
 
 `fixed_step` is an OMSimulator choice: with `False` the backend sets only the
 logging interval and lets the master keep its event handling; with `True` it
@@ -323,8 +325,8 @@ $ pyssp-simulate run-all sweep.json
 ```
 
 `run` simulates one SSP package and writes the result CSV given `--output`
-(short form `-o`). It accepts `--backend` (`auto` by default, which picks the
-first available backend), `--start-time`, `--stop-time` (default `1.0`),
+(short form `-o`). It accepts `--backend` (default `omsimulator`; the choices
+are the registered backends), `--start-time`, `--stop-time` (default `1.0`),
 `--step-size`, and `--tolerance`.
 
 `backends` lists every registered backend and its availability.
@@ -342,7 +344,8 @@ pytest
 ruff check src tests
 ```
 
-Backends whose engines are not installed are skipped automatically.
+`simulate_all` and `run-all` skip backends whose engines are not installed;
+`simulate` raises instead.
 
 The integration tests use two primitive FMUs — a ramp source (`y = t`) and
 an integrator (`der(y) = u`) wired together — compiled at test time by the

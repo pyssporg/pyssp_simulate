@@ -4,6 +4,11 @@ Every backend returns a :class:`SimulationResult` holding a structured
 NumPy array. The array's field names are *canonical* signal names of the
 form ``<component>.<signal>`` (``"time"`` for the independent variable),
 regardless of how each engine names its result columns.
+
+Field order is canonical and engine-independent: ``"time"`` first when
+present, then every other field sorted by code point. Engines may emit
+different column sets, but a column they share always lands in the same
+relative position, so results stay comparable across engines.
 """
 
 from __future__ import annotations
@@ -65,11 +70,19 @@ def canonicalize_signal(
 
 
 def array_from_columns(columns: dict[str, np.ndarray]) -> np.ndarray:
-    """Build a structured array from an ordered mapping of signal columns."""
+    """Build a structured array from a mapping of signal columns.
+
+    Field order is canonical and independent of the mapping's insertion
+    order: ``"time"`` first when present, then the remaining fields sorted
+    by code point.
+    """
     if not columns:
         raise ValueError("Cannot build a result array from zero columns")
 
-    names = list(columns)
+    names = sorted(columns)
+    if TIME_SIGNAL in names:
+        names.remove(TIME_SIGNAL)
+        names.insert(0, TIME_SIGNAL)
     if TIME_SIGNAL in columns:
         length = len(columns[TIME_SIGNAL])
     else:
@@ -90,7 +103,8 @@ def read_result_csv(
     """Read a numeric result CSV into a structured array.
 
     The first row must be the header; all values are parsed as floats.
-    Header names are canonicalized with :func:`canonicalize_signal`.
+    Header names are canonicalized with :func:`canonicalize_signal`, and
+    fields come back in canonical order (``"time"`` first, then sorted).
 
     :param path: CSV file to read.
     :param root_system: container level name(s) to strip from header names,

@@ -25,7 +25,11 @@ from pathlib import Path
 import numpy as np
 
 from pyssp_simulate.interface import Simulator, import_module_available
-from pyssp_simulate.result import SimulationResult, canonicalize_signal
+from pyssp_simulate.result import (
+    SimulationResult,
+    array_from_columns,
+    canonicalize_signal,
+)
 from pyssp_simulate.runtime import prepare_runtime_ssp
 from pyssp_simulate.spec import SimulationSpec
 
@@ -236,17 +240,17 @@ def _get_connections(system, connectors=None):
 
 
 def _canonicalize(raw: np.ndarray, root_system: str | Sequence[str] | None) -> np.ndarray:
-    """Rename FMPy's result fields to canonical signal names."""
+    """Rename FMPy's result fields to canonical names and field order."""
     names = list(raw.dtype.names or ())
-    canonical = {name: canonicalize_signal(name, root_system) for name in names}
-    if all(new == old for old, new in canonical.items()):
-        return raw
-
-    dtype = [(canonical[name], raw.dtype[name]) for name in names]
-    data = np.empty_like(raw, dtype=dtype)
-    for old, new in canonical.items():
-        data[new] = raw[old]
-    return data
+    columns: dict[str, np.ndarray] = {}
+    for name in names:
+        canonical = canonicalize_signal(name, root_system)
+        if canonical in columns:
+            raise ValueError(
+                f"Duplicate columns after canonicalization: {list(columns) + [canonical]}"
+            )
+        columns[canonical] = np.asarray(raw[name], dtype=np.float64)
+    return array_from_columns(columns)
 
 
 SIMULATOR = FMPySimulator

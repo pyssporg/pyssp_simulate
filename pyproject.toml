@@ -24,9 +24,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
-# FMPy installs from PyPI on all platforms and is the default backend,
-# so it ships with the base install. The other backends are optional
-# (see [project.optional-dependencies] and the README).
+# FMPy installs from PyPI on all platforms, so it ships with the base
+# install. The default backend (omsimulator) and the other backends are
+# optional (see [project.optional-dependencies] and the README).
 dependencies = [
     "numpy>=1.24",
     "fmpy>=0.3.20",

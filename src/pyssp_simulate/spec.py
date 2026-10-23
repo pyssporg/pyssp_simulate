@@ -23,9 +23,10 @@ class SimulationSpec:
         :meth:`effective_step_size` (``duration / 100``), FMPy its own
         equivalent default, and cosim reads the step from the SSD (see the
         cosim backend for the annotation it requires).
-    :param tolerance: optional solver/iteration tolerance. Honored by the
-        OMSimulator and ssp4sim backends (ssp4sim substitutes ``1e-4`` when
-        left at ``None``); FMPy and cosim have no tolerance setting and
+    :param tolerance: optional solver/iteration tolerance, honored by the
+        OMSimulator and ssp4sim backends. When ``None`` OMSimulator leaves it
+        at its own default, while ssp4sim raises ``ValueError`` because its
+        engine requires the key. FMPy and cosim have no tolerance setting and
         ignore it.
     :param result_file: optional path the result CSV is written to. When
         ``None``, the result is only kept in memory.

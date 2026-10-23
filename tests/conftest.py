@@ -242,4 +242,7 @@ def spec_kwargs():
         "start_time": START_TIME,
         "stop_time": STOP_TIME,
         "step_size": STEP_SIZE,
+        # ssp4sim refuses to run without an explicit tolerance, so the shared
+        # settings name one; backends without a tolerance setting ignore it.
+        "tolerance": 1e-4,
     }

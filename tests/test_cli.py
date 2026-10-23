@@ -40,9 +40,11 @@ def test_run_command(ssp_archive: Path, tmp_path: Path, capsys):
 
 
 def test_run_command_unknown_backend(ssp_archive: Path, capsys):
-    exit_code = main(["run", str(ssp_archive), "--backend", "nope"])
-    assert exit_code == 1
-    assert "Unknown backend" in capsys.readouterr().err
+    """``--backend`` is restricted to the registered names by argparse."""
+    with pytest.raises(SystemExit) as error:
+        main(["run", str(ssp_archive), "--backend", "nope"])
+    assert error.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
 
 
 def test_compare_subcommand_is_gone():

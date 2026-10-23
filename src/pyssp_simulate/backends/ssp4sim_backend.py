@@ -59,6 +59,13 @@ class SSP4SimSimulator(Simulator):
         return False, "the `pyssp4sim` package is not installed"
 
     def simulate(self, spec: SimulationSpec) -> SimulationResult:
+        # The engine rejects a configuration without the key ("Config:
+        # missing key: simulation.tolerance"), so requiring it explicitly is
+        # the only alternative to substituting a value of our own.
+        if spec.tolerance is None:
+            raise ValueError(
+                "ssp4sim requires an explicit tolerance; pass tolerance=..."
+            )
         step = spec.effective_step_size()
 
         with spec.workspace() as work:
@@ -127,46 +134,45 @@ def _config_payload(
     step: float,
 ) -> dict:
     """Build the ssp4sim simulation configuration (its own JSON schema)."""
-    return {
-        "simulation": {
-            "ssp": str(runtime_root),
-            "ssd": ssd_name,
-            "start_time": spec.start_time,
-            "stop_time": spec.stop_time,
-            "timestep": step,
-            "tolerance": spec.tolerance if spec.tolerance is not None else 1e-4,
-            "realtime": False,
-            "working_dir": str(work_dir),
-            "executor": {
-                "method": "jacobi",
-                "thread_pool_workers": 5,
-                "forward_derivatives": True,
-                "sub_step": step,
-                "jacobi": {"parallel": True, "method": 1},
-                "seidel": {"parallel": False},
-            },
-            "recording": {
+    simulation = {
+        "ssp": str(runtime_root),
+        "ssd": ssd_name,
+        "start_time": spec.start_time,
+        "stop_time": spec.stop_time,
+        "timestep": step,
+        "tolerance": spec.tolerance,
+        "realtime": False,
+        "working_dir": str(work_dir),
+        "executor": {
+            "method": "jacobi",
+            "thread_pool_workers": 5,
+            "forward_derivatives": True,
+            "sub_step": step,
+            "jacobi": {"parallel": True, "method": 1},
+            "seidel": {"parallel": False},
+        },
+        "recording": {
+            "enable": True,
+            "wait_for": True,
+            "interval": step,
+            "result_file": str(result_file),
+            "csv": {
                 "enable": True,
-                "wait_for": True,
+                "file": str(result_file),
                 "interval": step,
-                "result_file": str(result_file),
-                "csv": {
-                    "enable": True,
-                    "file": str(result_file),
-                    "interval": step,
-                },
-                "influx": {"enable": False},
             },
-            "log": {
-                "file": str(log_file),
-                "level_terminal": "error",
-                "level_file": "info",
-                "level_json": "disable",
-                "level_cutelog": "disable",
-                "fmu": False,
-            },
-        }
+            "influx": {"enable": False},
+        },
+        "log": {
+            "file": str(log_file),
+            "level_terminal": "error",
+            "level_file": "info",
+            "level_json": "disable",
+            "level_cutelog": "disable",
+            "fmu": False,
+        },
     }
+    return {"simulation": simulation}
 
 
 SIMULATOR = SSP4SimSimulator

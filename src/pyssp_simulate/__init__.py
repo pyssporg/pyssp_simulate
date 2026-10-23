@@ -16,7 +16,7 @@ Public API:
   :class:`PermutationRun` -- batch sweeps described by a JSON config.
 * :func:`available_backends` / :func:`backend_names` / :func:`get_simulator` /
   :class:`Simulator` / :class:`BackendNotAvailableError` /
-  ``BACKEND_MODULES`` -- backend registry.
+  ``BACKEND_MODULES`` / ``DEFAULT_BACKEND`` -- backend registry.
 * :func:`spec_summary` -- plain-dict view of a spec.
 
 Measurement and judgment are not part of this package. They live in
@@ -37,6 +37,7 @@ Example::
 
 from pyssp_simulate.interface import (
     BACKEND_MODULES,
+    DEFAULT_BACKEND,
     BackendNotAvailableError,
     Simulator,
     available_backends,
@@ -68,6 +69,7 @@ __version__ = "0.2.0"
 __all__ = [
     "BACKEND_MODULES",
     "BackendNotAvailableError",
+    "DEFAULT_BACKEND",
     "PermutationConfig",
     "PermutationRun",
     "RuntimeSSP",

@@ -18,8 +18,9 @@ BACKEND_MODULES: dict[str, str] = {
     "cosim": "pyssp_simulate.backends.cosim_backend",
 }
 
-# Order used when backend="auto".
-BACKEND_PRIORITY = ("fmpy", "omsimulator", "ssp4sim", "cosim")
+# Used only when the caller names no backend. There is no automatic
+# fallback: a requested backend that is not installed raises.
+DEFAULT_BACKEND = "omsimulator"
 
 
 class BackendNotAvailableError(RuntimeError):
@@ -102,26 +103,15 @@ def available_backends() -> dict[str, tuple[bool, str | None]]:
     return status
 
 
-def simulate(spec: SimulationSpec, backend: str = "auto") -> SimulationResult:
+def simulate(spec: SimulationSpec, backend: str = DEFAULT_BACKEND) -> SimulationResult:
     """Simulate an SSP package with one backend.
 
     :param spec: what to simulate (see :class:`SimulationSpec`).
-    :param backend: backend name, or ``"auto"`` for the first available
-        backend in registry order.
+    :param backend: backend name; defaults to :data:`DEFAULT_BACKEND`.
+    :raises KeyError: if ``backend`` is not a registered backend name.
+    :raises BackendNotAvailableError: if the requested backend's engine is
+        not installed. There is no fallback to another engine.
     """
-    if backend.lower() == "auto":
-        for name in BACKEND_PRIORITY:
-            simulator_class = get_simulator_class(name)
-            ok, _ = simulator_class.available()
-            if ok:
-                backend = name
-                break
-        else:
-            raise BackendNotAvailableError(
-                "No simulation backend is available. Install at least one "
-                "engine, e.g. `pip install fmpy`."
-            )
-
     simulator = get_simulator(backend)
     return simulator.simulate(spec)
 

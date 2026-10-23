@@ -17,6 +17,7 @@ import argparse
 import sys
 
 from pyssp_simulate.interface import (
+    DEFAULT_BACKEND,
     BackendNotAvailableError,
     available_backends,
     backend_names,
@@ -38,8 +39,10 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("ssp", help=".ssp archive or unpacked SSP directory")
     run_parser.add_argument(
         "--backend",
-        default="auto",
-        help=f"simulation backend: {', '.join(backend_names())}, or auto (default)",
+        default=DEFAULT_BACKEND,
+        type=str.lower,
+        choices=backend_names(),
+        help=f"simulation backend (default: {DEFAULT_BACKEND})",
     )
     run_parser.add_argument("--start-time", type=float, default=0.0, help="start time")
     run_parser.add_argument(
