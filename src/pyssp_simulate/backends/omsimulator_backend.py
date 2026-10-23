@@ -39,8 +39,15 @@ class OMSimulatorSimulator(Simulator):
     def simulate(self, spec: SimulationSpec) -> SimulationResult:
         from OMSimulator import SSP as OMSSP
         from OMSimulator import Settings
+        from OMSimulator.capi import Capi, Status
 
         Settings.suppressPath = True
+        for option in spec.omsimulator_options:
+            status = Capi.setCommandLineOption(option)
+            if status != Status.ok:
+                raise RuntimeError(
+                    f"Failed to set OMSimulator command line option {option!r}: {status}"
+                )
 
         with spec.workspace() as work:
             with prepare_runtime_ssp(spec.ssp) as runtime:
@@ -53,8 +60,9 @@ class OMSimulatorSimulator(Simulator):
                     try:
                         instance.setStartTime(spec.start_time)
                         instance.setStopTime(spec.stop_time)
-                        instance.setFixedStepSize(spec.effective_step_size())
                         instance.setLoggingInterval(spec.effective_step_size())
+                        if spec.fixed_step:
+                            instance.setFixedStepSize(spec.effective_step_size())
                         if spec.tolerance is not None:
                             instance.setTolerance(spec.tolerance)
                         instance.setResultFile(str(result_path))

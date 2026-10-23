@@ -18,6 +18,10 @@ therefore run as a bare script that imports ``pyssp4sim`` before
 anything else can load a dynamic libstdc++. Additionally, the v0.3.1
 wheels contain AVX-512 instructions and crash with SIGILL on CPUs
 without AVX-512 support.
+
+The engine loads unpacked FMU directories natively, so the runtime SSP is
+prepared with ``repackage_fmus=False``. After the child exits, the graph
+and tree diagnostic files it leaves in the workspace are removed.
 """
 
 from __future__ import annotations
@@ -34,6 +38,10 @@ from pyssp_simulate.runtime import prepare_runtime_ssp
 from pyssp_simulate.spec import SimulationSpec
 
 _CHILD_SCRIPT = Path(__file__).resolve().parent / "ssp4sim_child.py"
+
+#: Diagnostics the engine drops into its working directory. They are not part
+#: of the run contract, so the backend removes them after the child exits.
+DIAGNOSTIC_ARTIFACTS = ("graph_output.dot", "model_graph.dot", "tree_output.txt")
 
 
 class SSP4SimSimulator(Simulator):
@@ -54,7 +62,9 @@ class SSP4SimSimulator(Simulator):
         step = spec.effective_step_size()
 
         with spec.workspace() as work:
-            with prepare_runtime_ssp(spec.ssp) as runtime:
+            # ssp4sim loads unpacked FMU directories natively, so the runtime
+            # package keeps that layout in its root and archive.
+            with prepare_runtime_ssp(spec.ssp, repackage_fmus=False) as runtime:
                 result_path = work / "result.csv"
                 config_path = work / "config.json"
                 log_path = work / "ssp4sim.log"
@@ -79,6 +89,9 @@ class SSP4SimSimulator(Simulator):
                     text=True,
                 )
                 runtime_s = time.perf_counter() - start
+
+                for name in DIAGNOSTIC_ARTIFACTS:
+                    (work / name).unlink(missing_ok=True)
 
                 if process.returncode != 0:
                     raise RuntimeError(
