@@ -6,11 +6,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.io import savemat
 
 from pyssp_simulate.result import (
     SimulationResult,
     array_from_columns,
     canonicalize_signal,
+    read_dymola_mat,
     read_result_csv,
     write_result_csv,
 )
@@ -152,3 +154,74 @@ class TestSimulationResult:
         assert summary["signals"] == ["Ball.h", "Ball.v"]
         assert summary["samples"] == 3
         assert summary["time_range"] == [0.0, 1.0]
+
+
+def _char_matrix(strings: list[str]) -> np.ndarray:
+    """A Dymola/MATLAB-style character matrix (one string per column)."""
+    width = max(len(text) for text in strings)
+    return np.array(
+        [[ord(character) for character in text.ljust(width)] for text in strings],
+        dtype=np.uint16,
+    ).T
+
+
+def _write_mat(path: Path, *, keys: set[str] | None = None) -> Path:
+    """Write a Dymola ``dsres`` MAT file with one of each data source."""
+    matrices = {
+        "Aclass": _char_matrix(["Trajectory"]),
+        "name": _char_matrix(["time", "speed", "constant", "negated", "skipped"]),
+        "description": _char_matrix(
+            ["Independent time axis", "speed", "constant", "negated", "skipped"]
+        ),
+        "dataInfo": np.array(
+            [
+                [0, 2, 1, 2, 3],
+                [0, 2, 1, -2, 1],
+            ],
+            dtype=np.int64,
+        ),
+        "data_1": np.array([[5.0]], dtype=np.float64),
+        "data_2": np.array(
+            [
+                [0.0, 1.0, 2.0],
+                [10.0, 20.0, 30.0],
+            ],
+            dtype=np.float64,
+        ),
+    }
+    selected = {name: value for name, value in matrices.items() if keys is None or name in keys}
+    savemat(path, selected)
+    return path
+
+
+class TestReadDymolaMat:
+    def test_decodes_names_and_data_sources(self, tmp_path: Path):
+        data = read_dymola_mat(_write_mat(tmp_path / "dsres.mat"))
+
+        assert data.dtype.names == ("time", "speed", "constant", "negated")
+        np.testing.assert_allclose(data["time"], [0.0, 1.0, 2.0])
+        np.testing.assert_allclose(data["speed"], [10.0, 20.0, 30.0])
+        np.testing.assert_allclose(data["constant"], [5.0, 5.0, 5.0])
+        np.testing.assert_allclose(data["negated"], [-10.0, -20.0, -30.0])
+
+    def test_output_feeds_write_result_csv(self, tmp_path: Path):
+        data = read_dymola_mat(_write_mat(tmp_path / "dsres.mat"))
+        path = write_result_csv(tmp_path / "result.csv", data)
+        reloaded = read_result_csv(path)
+
+        assert reloaded.dtype.names == data.dtype.names
+        np.testing.assert_allclose(reloaded["negated"], data["negated"])
+
+    def test_missing_matrix_raises(self, tmp_path: Path):
+        path = _write_mat(tmp_path / "dsres.mat", keys={"name", "data_2"})
+        with pytest.raises(KeyError, match="Missing expected MAT keys"):
+            read_dymola_mat(path)
+
+    def test_missing_file_raises(self, tmp_path: Path):
+        with pytest.raises(FileNotFoundError, match="MAT file not found"):
+            read_dymola_mat(tmp_path / "none.mat")
+
+    def test_is_exported_from_the_package(self):
+        import pyssp_simulate
+
+        assert pyssp_simulate.read_dymola_mat is read_dymola_mat

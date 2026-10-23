@@ -185,6 +185,16 @@ result.write_csv("fmpy.csv")
 result = SimulationResult.from_csv("fmpy.csv")
 ```
 
+Dymola `dsres` MAT files are read into the same structured array shape; this
+needs the `dymola` extra (`pip install ".[dymola]"`, which installs scipy):
+
+```python
+from pyssp_simulate import read_dymola_mat, write_result_csv
+
+data = read_dymola_mat("dsres.mat")
+write_result_csv("dymola.csv", data)
+```
+
 `result.artifacts` collects files worth keeping. Its contents are
 backend-dependent: every backend records the result CSV written through
 `result_file` or `write_csv`, and backends that drive external engines also

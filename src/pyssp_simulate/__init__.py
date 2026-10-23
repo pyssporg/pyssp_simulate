@@ -6,7 +6,8 @@ Public API:
 * :func:`simulate` / :func:`simulate_all` -- run one or all backends.
 * :class:`SimulationResult` -- normalized result (structured NumPy array),
   with CSV helpers :func:`read_result_csv` / :func:`write_result_csv` and
-  :func:`canonicalize_signal`.
+  :func:`canonicalize_signal`, plus :func:`read_dymola_mat` for Dymola
+  result files (requires the ``dymola`` extra).
 * :class:`RuntimeSSP` / :func:`prepare_runtime_ssp` -- normalized SSP archive
   and unpacked root for engine adapters and consumers that must invoke an
   engine directly.
@@ -55,6 +56,7 @@ from pyssp_simulate.result import (
     TIME_SIGNAL,
     SimulationResult,
     canonicalize_signal,
+    read_dymola_mat,
     read_result_csv,
     write_result_csv,
 )
@@ -80,6 +82,7 @@ __all__ = [
     "iter_permutation_specs",
     "load_permutation_config",
     "prepare_runtime_ssp",
+    "read_dymola_mat",
     "read_result_csv",
     "run_permutations",
     "simulate",

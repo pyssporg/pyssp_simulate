@@ -142,6 +142,87 @@ def read_result_csv(
     )
 
 
+def read_dymola_mat(path: Path | str) -> np.ndarray:
+    """Read a Dymola ``dsres`` MAT file into a structured result array.
+
+    Decodes ``Aclass``/``name``/``description``/``dataInfo``/``data_1``/
+    ``data_2``; the signed row index in ``dataInfo`` encodes negation; a
+    ``data_1`` row is a constant series, a ``data_2`` row is a trajectory.
+    Returns ``time`` plus one field per named variable, ready for
+    :func:`write_result_csv`. Requires the ``dymola`` extra (scipy).
+
+    Variables whose ``dataInfo`` source matrix is neither ``1`` nor ``2``
+    are skipped, and a variable named ``time`` is not duplicated (the time
+    axis always comes from the first row of ``data_2``).
+
+    :param path: MAT file written by Dymola.
+    :raises FileNotFoundError: if ``path`` does not exist.
+    :raises KeyError: if a required MAT matrix is missing.
+    """
+    from scipy.io import loadmat
+
+    mat_path = Path(path)
+    if not mat_path.is_file():
+        raise FileNotFoundError(f"MAT file not found: {mat_path}")
+
+    data = loadmat(mat_path, chars_as_strings=False)
+    required = {"Aclass", "name", "description", "dataInfo", "data_1", "data_2"}
+    missing = required.difference(data)
+    if missing:
+        raise KeyError(f"Missing expected MAT keys: {', '.join(sorted(missing))}")
+
+    # The character matrices are decoded for validation; the result array
+    # carries only the names and their values.
+    _decode_char_matrix(data["Aclass"])
+    names = _decode_char_matrix(data["name"])
+    _decode_char_matrix(data["description"])
+
+    data_info = np.asarray(data["dataInfo"], dtype=np.int64)
+    data_1 = np.asarray(data["data_1"], dtype=np.float64)
+    data_2 = np.asarray(data["data_2"], dtype=np.float64)
+    if data_2.shape[0] < 1:
+        raise ValueError("data_2 does not contain a time row")
+
+    time = np.asarray(data_2[0, :], dtype=np.float64)
+    columns: dict[str, np.ndarray] = {TIME_SIGNAL: time}
+
+    for index, name in enumerate(names):
+        if name == TIME_SIGNAL:
+            continue
+
+        source_matrix = int(data_info[0, index])
+        signed_source_row = int(data_info[1, index])
+        # Dymola-style MAT aliases encode negation in the signed row index.
+        source_row = abs(signed_source_row)
+        sign = -1.0 if signed_source_row < 0 else 1.0
+
+        if source_matrix == 1:
+            if source_row < 1 or source_row > data_1.shape[0]:
+                raise IndexError(f"Invalid data_1 row {source_row} for variable {name}")
+            value = sign * float(data_1[source_row - 1, 0])
+            columns[name] = np.full(time.shape, value, dtype=np.float64)
+        elif source_matrix == 2:
+            if source_row < 1 or source_row > data_2.shape[0]:
+                raise IndexError(f"Invalid data_2 row {source_row} for variable {name}")
+            columns[name] = sign * np.asarray(data_2[source_row - 1, :], dtype=np.float64)
+
+    return array_from_columns(columns)
+
+
+def _decode_char_matrix(value: np.ndarray) -> list[str]:
+    """Decode a MATLAB/Dymola character matrix into one string per column."""
+    if value.ndim != 2:
+        raise ValueError(f"Expected a 2D character matrix, got shape {value.shape}")
+    strings = []
+    for index in range(value.shape[1]):
+        codes = (
+            chr(int(code)) if not isinstance(code, str) else str(code)
+            for code in value[:, index]
+        )
+        strings.append("".join(codes).rstrip(" \x00"))
+    return strings
+
+
 def write_result_csv(path: Path | str, data: np.ndarray) -> Path:
     """Write a structured array as a plain numeric CSV with a header row."""
     path = Path(path)

@@ -37,6 +37,8 @@ dependencies = [
 # current platforms (e.g. Ubuntu 24.04) but can fail on distributions
 # whose build artifacts are no longer published. See README.
 omsimulator = ["OMSimulator>=3.0.0.post115"]
+# Dymola ``dsres`` MAT result files; only read_dymola_mat needs scipy.
+dymola = ["scipy"]
 # Cross-backend measurement inside permutation runs. pyssp_vv is not on PyPI
 # yet, so this extra documents the intent; install it from the sibling
 # checkout during development (see the repository README).
