@@ -62,8 +62,14 @@ and result shape; measurement and judgment stay in `pyssp_vv`.
 
 ## Conventions
 
-- `docs/breakdown/` holds intent and architecture.
-- Architecture decisions are `docs/breakdown/02-architecture/decisions/ADR-<NNN>.md`.
+- `docs/breakdown/` holds current state in layers; only `00-intent/` and
+  `02-architecture/` exist today. Absent layers stay absent; the breakdown
+  `README.md` says which.
+- Committed choices are records in `docs/archive/archive.zip`, filed with
+  `pb archive add`, read with `pb archive list` and `pb archive read <ID>`.
+  No per-layer `decisions/` folders.
+- Generated registers in `docs/archive/` regenerate with `pb registers`; never
+  hand-edit them. Pass `--root docs/breakdown` to every `pb` command.
 - When a decision changes the boundary, update the intent or architecture leaf
   rather than leaving the code as the only record.
 

@@ -1,3 +1,12 @@
+---
+id: INFO-001
+type: info
+title: Intent
+summary: "Why pyssp_simulate exists: run SSP packages through pluggable engines and normalise results; measurement and judgment stay in pyssp_vv"
+date: 2026-10-22
+status: current
+---
+
 # Intent
 
 ## Purpose

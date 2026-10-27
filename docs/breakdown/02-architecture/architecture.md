@@ -1,3 +1,12 @@
+---
+id: INFO-002
+type: info
+title: Architecture
+summary: "How pyssp_simulate is organized: runtime preparation to backend adapter to SimulationResult, with standard-artifact boundaries and explicit backend selection"
+date: 2026-10-23
+status: current
+---
+
 # Architecture
 
 ## Shape
