@@ -25,9 +25,10 @@ import numpy as np
 import pytest
 from pyssp_vv.measure import Trajectory, compare
 from tests.conftest import (
+    CONTAINER_NAMES,
     START_TIME,
+    STEP_COUNT,
     STEP_SIZE,
-    STOP_TIME,
     analytic_integrator,
     analytic_source,
 )
@@ -39,21 +40,49 @@ from pyssp_simulate import (
     simulate,
     simulate_all,
 )
-from pyssp_simulate.backends.fmpy_backend import _get_connections
+from pyssp_simulate.backends import ssp4sim_backend
+from pyssp_simulate.backends.cosim_backend import (
+    CosimSimulator,
+    component_name_from_csv,
+    merge_cosim_csvs,
+    resolve_cosim_binary,
+)
+from pyssp_simulate.backends.fmpy_backend import _canonicalize, _get_connections
 from pyssp_simulate.backends.omsimulator_backend import OMSimulatorSimulator
 from pyssp_simulate.backends.ssp4sim_backend import (
     DIAGNOSTIC_ARTIFACTS,
     SSP4SimSimulator,
 )
 from pyssp_simulate.interface import get_simulator
+from pyssp_simulate.result import read_result_csv
 
-# fmpy's SSP master records every sample after stepping, i.e. the value
-# from t + h lands under the timestamp t, while the other engines record
-# aligned samples (see tests/conftest.py). The chain's signals change at
-# a rate of at most 1, so a one-step recording offset is bounded by
-# STEP_SIZE; the source check therefore needs STEP_SIZE of headroom and
-# the integrator's explicit-Euler error (t*h/2 = 5e-4 at t = 1 s)
-# dominates its tolerance instead.
+# The recorded OMSimulator result excerpt: the real engine's header for this
+# fixture package plus its first data rows (see tests/fixtures/README.md).
+OMSIMULATOR_FIXTURE = Path(__file__).parent / "fixtures" / "omsimulator_result.csv"
+
+# Documented recording policy of each backend for the fixture window. The
+# fixture has STEP_COUNT = stop/step = 1000 communication steps.
+#
+# * fmpy records each sample after stepping, so the value of step k lands
+#   under the step's start timestamp: indices 0 .. STEP_COUNT - 1, last
+#   timestamp STOP - STEP.
+# * ssp4sim records start-of-step values: indices 1 .. STEP_COUNT, first
+#   timestamp START + STEP, last timestamp STOP.
+# * OMSimulator logs every step boundary including both ends: indices
+#   0 .. STEP_COUNT (with event output disabled, see ``spec_kwargs``).
+# * cosim (libcosim) logs every communication step over [START, STOP]:
+#   indices 0 .. STEP_COUNT. Unverified here: the binary is not installed.
+RECORDING_FIRST_INDEX = {"fmpy": 0, "ssp4sim": 1, "omsimulator": 0, "cosim": 0}
+RECORDING_SAMPLE_COUNT = {
+    "fmpy": STEP_COUNT,
+    "ssp4sim": STEP_COUNT,
+    "omsimulator": STEP_COUNT + 1,
+    "cosim": STEP_COUNT + 1,
+}
+
+# fmpy's one-step recording offset is bounded by STEP_SIZE; the source check
+# therefore needs STEP_SIZE of headroom and the integrator's explicit-Euler
+# error (t*h/2 = 5e-4 at t = 1 s) dominates its tolerance instead.
 SOURCE_ATOL = STEP_SIZE + 1e-6
 INTEGRATOR_ATOL = 1e-3
 CROSS_BACKEND_ATOL = 5e-3
@@ -64,19 +93,33 @@ def _backend_ready(name: str) -> bool:
     return ok
 
 
+def assert_sample_grid(result) -> None:
+    """Assert the documented, engine-exact time grid for the fixture.
+
+    Exactly the documented number of samples, strictly increasing, no
+    duplicate timestamps, and every sample on the ``start + k * step`` grid
+    from the backend's documented first index.
+    """
+    assert result.backend in RECORDING_FIRST_INDEX, result.backend
+    first = RECORDING_FIRST_INDEX[result.backend]
+    count = RECORDING_SAMPLE_COUNT[result.backend]
+    time = result.time
+
+    assert len(time) == count, (result.backend, len(time), count)
+    assert np.all(np.diff(time) > 0.0), f"{result.backend} time is not strictly increasing"
+    assert len(np.unique(time)) == len(time), f"{result.backend} time has duplicates"
+    expected = START_TIME + np.arange(first, first + count) * STEP_SIZE
+    np.testing.assert_allclose(time, expected, atol=1e-9, rtol=0)
+
+
 def assert_matches_analytic(result):
     assert "RampSource.y" in result.signals, result.signals
     assert "Integrator.y" in result.signals
 
+    assert_sample_grid(result)
     time = result.time
     source = result["RampSource.y"]
     integrator = result["Integrator.y"]
-    assert len(time) > 10
-    # Engines record at different offsets (start vs. end of a step), so
-    # the first and last samples may sit up to one step outside the
-    # nominal window.
-    assert time[0] == pytest.approx(START_TIME, abs=STEP_SIZE + 1e-9)
-    assert time[-1] == pytest.approx(STOP_TIME, abs=STEP_SIZE + 1e-9)
 
     np.testing.assert_allclose(source, analytic_source(time), atol=SOURCE_ATOL)
     np.testing.assert_allclose(
@@ -185,6 +228,7 @@ def test_common_columns_have_identical_order(spec):
     assert len(set(common_orders.values())) <= 1, common_orders
 
 
+@pytest.mark.level_contract
 def test_get_simulator_returns_correct_class():
     from pyssp_simulate.backends.fmpy_backend import FMPySimulator
 
@@ -263,7 +307,7 @@ def _install_ssp4sim_stub(monkeypatch: pytest.MonkeyPatch) -> dict:
     """Replace the child process: record the config and fabricate its output."""
     observed: dict = {}
 
-    def fake_run(command, capture_output=True, text=True):
+    def fake_run(command, capture_output=True, text=True, timeout=None):
         config = json.loads(Path(command[-1]).read_text())
         simulation = config["simulation"]
         runtime_root = Path(simulation["ssp"])
@@ -285,6 +329,7 @@ def _install_ssp4sim_stub(monkeypatch: pytest.MonkeyPatch) -> dict:
     return observed
 
 
+@pytest.mark.level_contract
 def test_ssp4sim_uses_unpacked_fmus_and_cleans_diagnostics(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -313,6 +358,7 @@ def test_ssp4sim_uses_unpacked_fmus_and_cleans_diagnostics(
     assert any(path.name == "config.json" for path in result.artifacts)
 
 
+@pytest.mark.level_contract
 def test_ssp4sim_requires_an_explicit_tolerance(tmp_path: Path):
     """No silent default: the engine requires the key, so the caller must pass it."""
     ssp = _synthetic_ssp_dir(tmp_path)
@@ -323,9 +369,59 @@ def test_ssp4sim_requires_an_explicit_tolerance(tmp_path: Path):
         )
 
 
+def _ssp4sim_spec(ssp: Path, **kwargs) -> SimulationSpec:
+    return SimulationSpec(
+        ssp=ssp, start_time=0.0, stop_time=1.0, step_size=0.1, tolerance=1e-3, **kwargs
+    )
+
+
+def _write_fake_ssp4sim_child(tmp_path: Path, body: str) -> Path:
+    """A child script in ``tmp_path``; the real engine is never imported."""
+    script = tmp_path / "fake_ssp4sim_child.py"
+    script.write_text(body)
+    return script
+
+
+@pytest.mark.level_contract
+def test_ssp4sim_child_nonzero_exit_raises(tmp_path: Path, monkeypatch):
+    """A crashed child must surface as an error, never as a silent pass."""
+    ssp = _synthetic_ssp_dir(tmp_path)
+    child = _write_fake_ssp4sim_child(
+        tmp_path, "import sys\nsys.stderr.write('engine exploded\\n')\nsys.exit(3)\n"
+    )
+    monkeypatch.setattr(ssp4sim_backend, "_CHILD_SCRIPT", child)
+
+    with pytest.raises(RuntimeError, match="exit code 3") as error:
+        SSP4SimSimulator().simulate(_ssp4sim_spec(ssp))
+    assert "engine exploded" in str(error.value)
+
+
+@pytest.mark.level_contract
+def test_ssp4sim_child_without_result_file_raises(tmp_path: Path, monkeypatch):
+    """Exit code 0 is not success unless the result file exists."""
+    ssp = _synthetic_ssp_dir(tmp_path)
+    child = _write_fake_ssp4sim_child(tmp_path, "import sys\nsys.exit(0)\n")
+    monkeypatch.setattr(ssp4sim_backend, "_CHILD_SCRIPT", child)
+
+    with pytest.raises(RuntimeError, match="did not produce a result file"):
+        SSP4SimSimulator().simulate(_ssp4sim_spec(ssp))
+
+
+@pytest.mark.level_contract
+def test_ssp4sim_hung_child_times_out(tmp_path: Path, monkeypatch):
+    """A hung engine raises a bounded timeout instead of hanging CI."""
+    ssp = _synthetic_ssp_dir(tmp_path)
+    child = _write_fake_ssp4sim_child(tmp_path, "import time\ntime.sleep(30)\n")
+    monkeypatch.setattr(ssp4sim_backend, "_CHILD_SCRIPT", child)
+
+    with pytest.raises(TimeoutError, match="did not finish within 0.2 s"):
+        SSP4SimSimulator(timeout=0.2).simulate(_ssp4sim_spec(ssp))
+
+
 class _FakeOMInstance:
-    def __init__(self, calls: dict):
+    def __init__(self, calls: dict, *, write_result: bool = True):
         self.calls = calls
+        self.write_result = write_result
         self.result_path: Path | None = None
 
     def setStartTime(self, value):
@@ -351,7 +447,10 @@ class _FakeOMInstance:
 
     def simulate(self):
         assert self.result_path is not None
-        self.result_path.write_text("time,Source.y\n0.0,0.0\n1.0,1.0\n")
+        if self.write_result:
+            # Write the recorded real-engine output shape, not a simplified
+            # ``time,Source.y`` header the engine never emits.
+            self.result_path.write_text(OMSIMULATOR_FIXTURE.read_text())
 
     def terminate(self):
         pass
@@ -360,7 +459,9 @@ class _FakeOMInstance:
         pass
 
 
-def _install_omsimulator_stub(monkeypatch: pytest.MonkeyPatch) -> dict:
+def _install_omsimulator_stub(
+    monkeypatch: pytest.MonkeyPatch, *, write_result: bool = True
+) -> dict:
     calls: dict = {"options": [], "logging": [], "fixed": [], "start_time": [], "stop_time": []}
     status = SimpleNamespace(ok="ok")
 
@@ -375,7 +476,7 @@ def _install_omsimulator_stub(monkeypatch: pytest.MonkeyPatch) -> dict:
             self.archive = archive
 
         def instantiate(self):
-            return _FakeOMInstance(calls)
+            return _FakeOMInstance(calls, write_result=write_result)
 
     fake_capi = ModuleType("OMSimulator.capi")
     fake_capi.Capi = FakeCapi
@@ -396,6 +497,7 @@ def _omsimulator_spec(ssp: Path, **kwargs) -> SimulationSpec:
     )
 
 
+@pytest.mark.level_contract
 def test_omsimulator_fixed_step_false_sets_only_logging_interval(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -410,6 +512,7 @@ def test_omsimulator_fixed_step_false_sets_only_logging_interval(
     assert result.backend == "omsimulator"
 
 
+@pytest.mark.level_contract
 def test_omsimulator_fixed_step_true_sets_both(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     ssp = _synthetic_ssp_dir(tmp_path)
     calls = _install_omsimulator_stub(monkeypatch)
@@ -420,6 +523,7 @@ def test_omsimulator_fixed_step_true_sets_both(tmp_path: Path, monkeypatch: pyte
     assert calls["fixed"] == [pytest.approx(0.1)]
 
 
+@pytest.mark.level_contract
 def test_omsimulator_options_reach_the_engine_in_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -432,6 +536,7 @@ def test_omsimulator_options_reach_the_engine_in_order(
     assert calls["options"] == list(options)
 
 
+@pytest.mark.level_contract
 def test_omsimulator_rejected_option_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -442,6 +547,46 @@ def test_omsimulator_rejected_option_raises(
         OMSimulatorSimulator().simulate(
             _omsimulator_spec(ssp, omsimulator_options=("--bad=true",))
         )
+
+
+@pytest.mark.level_contract
+def test_omsimulator_missing_result_file_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An engine run that writes no CSV must fail, not return empty data."""
+    ssp = _synthetic_ssp_dir(tmp_path)
+    _install_omsimulator_stub(monkeypatch, write_result=False)
+
+    with pytest.raises(RuntimeError, match="did not produce a result file"):
+        OMSimulatorSimulator().simulate(_omsimulator_spec(ssp))
+
+
+def _recorded_omsimulator_columns() -> tuple[str, ...]:
+    return read_result_csv(
+        OMSIMULATOR_FIXTURE, root_system=CONTAINER_NAMES
+    ).dtype.names
+
+
+@pytest.mark.level_contract
+def test_omsimulator_stub_matches_recorded_header(
+    ssp_archive: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The fake engine emits the recorded real header for the same SSP."""
+    _install_omsimulator_stub(monkeypatch)
+
+    result = OMSimulatorSimulator().simulate(
+        SimulationSpec(ssp=ssp_archive, start_time=0.0, stop_time=1.0, step_size=0.1)
+    )
+
+    assert result.data.dtype.names == _recorded_omsimulator_columns()
+
+
+@pytest.mark.skipif(not _backend_ready("omsimulator"), reason="OMSimulator not installed")
+def test_omsimulator_real_backend_matches_recorded_header(spec):
+    """The real engine still produces the recorded canonical column set."""
+    result = simulate(spec, backend="omsimulator")
+
+    assert result.data.dtype.names == _recorded_omsimulator_columns()
 
 
 def _install_fmpy_stub(monkeypatch: pytest.MonkeyPatch) -> dict:
@@ -477,6 +622,7 @@ def _parameter_names(parameter_set) -> list[str]:
     return [parameter.name for parameter in parameter_set.parameters]
 
 
+@pytest.mark.level_contract
 def test_fmpy_passes_the_declared_parameter_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -490,6 +636,7 @@ def test_fmpy_passes_the_declared_parameter_set(
     assert _parameter_names(observed["parameter_set"]) == ["height"]
 
 
+@pytest.mark.level_contract
 def test_fmpy_applies_the_ssm_mapping_to_target_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -507,6 +654,7 @@ def test_fmpy_applies_the_ssm_mapping_to_target_names(
     assert _parameter_names(observed["parameter_set"]) == ["step.height"]
 
 
+@pytest.mark.level_contract
 def test_fmpy_mapping_source_absent_from_the_set_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -523,6 +671,7 @@ def test_fmpy_mapping_source_absent_from_the_set_raises(
         FMPySimulator().simulate(_fmpy_spec(ssp))
 
 
+@pytest.mark.level_contract
 def test_fmpy_without_parameter_binding_passes_none(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -536,6 +685,7 @@ def test_fmpy_without_parameter_binding_passes_none(
     assert observed["parameter_set"] is None
 
 
+@pytest.mark.level_contract
 def test_fmpy_validate_ssd_false_skips_validation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -555,6 +705,7 @@ def test_fmpy_validate_ssd_false_skips_validation(
     assert validated == []
 
 
+@pytest.mark.level_contract
 def test_fmpy_validate_ssd_true_keeps_validation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -572,6 +723,22 @@ def test_fmpy_validate_ssd_true_keeps_validation(
     FMPySimulator().simulate(_fmpy_spec(ssp, validate_ssd=True))
 
     assert len(validated) >= 1
+
+
+@pytest.mark.level_contract
+def test_fmpy_duplicate_canonical_columns_raise():
+    """Two engine columns that collapse to one canonical name must fail."""
+    raw = np.zeros(
+        2,
+        dtype=[
+            ("time", np.float64),
+            ("root.RampSource.y", np.float64),
+            ("RampSource.y", np.float64),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Duplicate columns after canonicalization"):
+        _canonicalize(raw, None)
 
 
 # --- FMPy boundary connection resolver (ported from ssp_references) ---------
@@ -607,6 +774,7 @@ class MockSystem:
         self._path = name
 
 
+@pytest.mark.level_contract
 def test_get_connections_empty_system():
     root = MockSystem("system", connectors=[], connections=[], elements=[])
     with pytest.MonkeyPatch.context() as monkeypatch:
@@ -615,6 +783,7 @@ def test_get_connections_empty_system():
         assert _get_connections(root) == []
 
 
+@pytest.mark.level_contract
 def test_get_connections_orphan_output_raises():
     out_con = MockConnector("out", "output", "system.out")
     root = MockSystem("system", connectors=[out_con], connections=[], elements=[])
@@ -627,6 +796,7 @@ def test_get_connections_orphan_output_raises():
             _get_connections(root)
 
 
+@pytest.mark.level_contract
 def test_get_connections_root_to_child():
     out_con = MockConnector("out", "output", "system.out")
     in_con = MockConnector("in", "input", "system.child.in")
@@ -651,3 +821,96 @@ def test_get_connections_root_to_child():
         assert start_con.name == "out"
         assert end_con.name == "in"
 
+
+# --- cosim adapter (no binary needed) ---------------------------------------
+
+
+@pytest.mark.level_contract
+class TestCosimAdapter:
+    """Unit tests over hand-written cosim CSVs and a fake executable."""
+
+    def test_component_name_strips_timestamp_suffix(self, tmp_path: Path):
+        assert (
+            component_name_from_csv(tmp_path / "RampSource_20240101_120000_1.csv")
+            == "RampSource"
+        )
+        assert component_name_from_csv(tmp_path / "RampSource.csv") == "RampSource"
+
+    def test_resolve_rejects_non_executable_override(self, tmp_path: Path, monkeypatch):
+        binary = tmp_path / "cosim"
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o644)
+        monkeypatch.setenv("COSIM_BINARY", str(binary))
+
+        assert resolve_cosim_binary() is None
+
+    def test_resolve_accepts_executable_override(self, tmp_path: Path, monkeypatch):
+        binary = tmp_path / "cosim"
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("COSIM_BINARY", str(binary))
+
+        assert resolve_cosim_binary() == str(binary)
+
+    def test_resolve_rejects_missing_override_path(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("COSIM_BINARY", str(tmp_path / "nowhere"))
+
+        assert resolve_cosim_binary() is None
+
+    def test_merge_prefixes_components_and_skips_meta_columns(self, tmp_path: Path):
+        (tmp_path / "RampSource_20240101_120000_1.csv").write_text(
+            "time,stepcount,y\n0,0,0\n1,1,1\n"
+        )
+        (tmp_path / "Integrator.csv").write_text("time,u,y\n0,0,0\n0.5,1,0.5\n1,1,1\n")
+
+        merged = merge_cosim_csvs(tmp_path)
+
+        assert merged.dtype.names == (
+            "time",
+            "Integrator.u",
+            "Integrator.y",
+            "RampSource.y",
+        )
+        np.testing.assert_allclose(merged["time"], [0.0, 0.5, 1.0])
+        # RampSource.y only has samples at 0 and 1; it is interpolated.
+        np.testing.assert_allclose(merged["RampSource.y"], [0.0, 0.5, 1.0])
+        np.testing.assert_allclose(merged["Integrator.y"], [0.0, 0.5, 1.0])
+
+    def test_merge_skips_non_numeric_columns(self, tmp_path: Path):
+        (tmp_path / "Ball.csv").write_text("time,y,label\n0,1,a\n1,2,b\n")
+
+        merged = merge_cosim_csvs(tmp_path)
+
+        assert merged.dtype.names == ("time", "Ball.y")
+
+    def test_merge_without_time_column_raises(self, tmp_path: Path):
+        (tmp_path / "Ball.csv").write_text("y\n1\n2\n")
+
+        with pytest.raises(ValueError, match="No time column"):
+            merge_cosim_csvs(tmp_path)
+
+    def test_merge_without_csvs_raises(self, tmp_path: Path):
+        output = tmp_path / "empty"
+        output.mkdir()
+
+        with pytest.raises(ValueError, match="No cosim CSV data"):
+            merge_cosim_csvs(output)
+
+    def test_hung_binary_times_out(self, tmp_path: Path, monkeypatch):
+        binary = tmp_path / "fake_cosim"
+        binary.write_text("#!/bin/sh\nsleep 30\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("COSIM_BINARY", str(binary))
+        ssp = _synthetic_ssp_dir(tmp_path)
+
+        with pytest.raises(TimeoutError, match="did not finish within 0.2 s"):
+            CosimSimulator(timeout=0.2).simulate(
+                SimulationSpec(ssp=ssp, start_time=0.0, stop_time=1.0, step_size=0.1)
+            )
+
+
+@pytest.mark.level_contract
+def test_backend_timeouts_default_to_600_seconds():
+    """A timeout parameter exists without changing normal-run behaviour."""
+    assert SSP4SimSimulator().timeout == 600.0
+    assert CosimSimulator().timeout == 600.0

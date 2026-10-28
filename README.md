@@ -360,6 +360,11 @@ python tests/generate_fmus.py            # builds tests/fmus/build/*.fmu
 export PYSSP_SIMULATE_TEST_FMU_DIR=tests/fmus/build
 ```
 
+The generator also writes `FMU_MANIFEST.json` next to the FMUs, pinning
+their bytes and the Modelica sources they were built from. A reused
+directory without a matching manifest fails the suite instead of running
+on stale FMUs; regenerate it with `python tests/generate_fmus.py --output DIR`.
+
 CI installs the OpenModelica compiler from the project's official apt
 repository before running the tests.
 

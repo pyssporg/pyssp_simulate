@@ -59,6 +59,13 @@ class CosimSimulator(Simulator):
         "and put it on PATH (or set COSIM_BINARY)."
     )
 
+    #: Seconds to wait for the engine child before giving up. A hung engine
+    #: must fail the run instead of blocking the caller forever.
+    DEFAULT_TIMEOUT_S = 600.0
+
+    def __init__(self, timeout: float = DEFAULT_TIMEOUT_S) -> None:
+        self.timeout = timeout
+
     @classmethod
     def available(cls) -> tuple[bool, str | None]:
         if resolve_cosim_binary() is not None:
@@ -66,6 +73,13 @@ class CosimSimulator(Simulator):
         return False, "the `cosim` executable was not found on PATH or via COSIM_BINARY"
 
     def simulate(self, spec: SimulationSpec) -> SimulationResult:
+        """Run one simulation with the cosim binary.
+
+        :raises RuntimeError: when the binary is missing, exits non-zero, or
+            writes no result CSVs.
+        :raises TimeoutError: when the child does not finish within
+            ``timeout`` seconds (default :attr:`DEFAULT_TIMEOUT_S`).
+        """
         binary = resolve_cosim_binary()
         if binary is None:
             raise RuntimeError("cosim binary not found")
@@ -82,7 +96,14 @@ class CosimSimulator(Simulator):
                     f"--output-dir={output_dir}",
                 ]
                 start = time.perf_counter()
-                process = subprocess.run(command, capture_output=True, text=True)
+                try:
+                    process = subprocess.run(
+                        command, capture_output=True, text=True, timeout=self.timeout
+                    )
+                except subprocess.TimeoutExpired as error:
+                    raise TimeoutError(
+                        f"cosim did not finish within {self.timeout} s"
+                    ) from error
                 runtime_s = time.perf_counter() - start
                 if process.returncode != 0:
                     raise RuntimeError(
@@ -107,10 +128,18 @@ class CosimSimulator(Simulator):
 
 def resolve_cosim_binary() -> str | None:
     """Find the cosim executable: ``COSIM_BINARY`` if set (exclusively --
-    no ``PATH`` fallback when it points nowhere), else ``PATH``."""
+    no ``PATH`` fallback when it points nowhere), else ``PATH``.
+
+    A ``COSIM_BINARY`` that exists but is not an executable file is
+    rejected, so a stale or non-executable override disables the backend
+    instead of failing inside :func:`subprocess.run`.
+    """
     from_env = os.environ.get("COSIM_BINARY")
     if from_env:
-        return from_env if Path(from_env).exists() else None
+        candidate = Path(from_env)
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return from_env
+        return None
     return shutil.which("cosim")
 
 

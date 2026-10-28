@@ -52,6 +52,13 @@ class SSP4SimSimulator(Simulator):
         "https://github.com/jkCXf9X4/ssp4sim/releases."
     )
 
+    #: Seconds to wait for the engine child before giving up. A hung engine
+    #: must fail the run instead of blocking the caller forever.
+    DEFAULT_TIMEOUT_S = 600.0
+
+    def __init__(self, timeout: float = DEFAULT_TIMEOUT_S) -> None:
+        self.timeout = timeout
+
     @classmethod
     def available(cls) -> tuple[bool, str | None]:
         if import_module_available("pyssp4sim"):
@@ -59,6 +66,14 @@ class SSP4SimSimulator(Simulator):
         return False, "the `pyssp4sim` package is not installed"
 
     def simulate(self, spec: SimulationSpec) -> SimulationResult:
+        """Run one simulation in the ssp4sim child process.
+
+        :raises ValueError: when the spec carries no explicit tolerance.
+        :raises TimeoutError: when the child does not finish within
+            ``timeout`` seconds (default :attr:`DEFAULT_TIMEOUT_S`).
+        :raises RuntimeError: when the child exits non-zero or writes no
+            result file.
+        """
         # The engine rejects a configuration without the key ("Config:
         # missing key: simulation.tolerance"), so requiring it explicitly is
         # the only alternative to substituting a value of our own.
@@ -90,11 +105,17 @@ class SSP4SimSimulator(Simulator):
                 # Run as a bare script (not ``python -m``): the child must
                 # import pyssp4sim before anything loads a dynamic libstdc++
                 # (see the module docstring).
-                process = subprocess.run(
-                    [sys.executable, str(_CHILD_SCRIPT), str(config_path)],
-                    capture_output=True,
-                    text=True,
-                )
+                try:
+                    process = subprocess.run(
+                        [sys.executable, str(_CHILD_SCRIPT), str(config_path)],
+                        capture_output=True,
+                        text=True,
+                        timeout=self.timeout,
+                    )
+                except subprocess.TimeoutExpired as error:
+                    raise TimeoutError(
+                        f"ssp4sim did not finish within {self.timeout} s"
+                    ) from error
                 runtime_s = time.perf_counter() - start
 
                 for name in DIAGNOSTIC_ARTIFACTS:

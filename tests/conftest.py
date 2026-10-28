@@ -18,7 +18,10 @@ solutions give the integration tests an engine-independent reference.
 FMU generation can be avoided in two ways: point the
 ``PYSSP_SIMULATE_TEST_FMU_DIR`` environment variable at a directory that
 already contains ``RampSource.fmu`` and ``Integrator.fmu`` (fast reuse),
-or pre-run ``python tests/generate_fmus.py``. When neither applies and
+or pre-run ``python tests/generate_fmus.py``. A reused directory must also
+carry the ``FMU_MANIFEST.json`` provenance file written by
+``tests/generate_fmus.py``; a missing or mismatched manifest fails the
+suite instead of silently reusing stale FMUs. When neither applies and
 ``omc`` is not installed, the tests that need the fixtures skip
 themselves.
 
@@ -30,6 +33,12 @@ annotation that bakes in ``STEP_SIZE``. Backends with a step-size
 command-line option pass their own value and ignore the annotation,
 while the cosim backend (libcosim) has no such option and takes the
 communication step from exactly this annotation.
+
+Every test carries exactly one ``level_*`` marker. The mapping from file
+to level is applied here so a new test cannot forget it; a test declares
+its own level only to override the file default (the stubbed-adapter
+tests in ``test_backends.py`` are ``level_contract`` inside an
+otherwise ``level_integration`` file).
 """
 
 from __future__ import annotations
@@ -40,7 +49,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from tests.generate_fmus import FMU_NAMES, generate_fmus
+from tests.generate_fmus import FMU_NAMES, generate_fmus, verify_manifest
 
 # Environment variable pointing at a directory with prebuilt test FMUs.
 FMU_DIR_ENV = "PYSSP_SIMULATE_TEST_FMU_DIR"
@@ -51,6 +60,58 @@ STOP_TIME = 1.0
 
 # Communication step size requested from every backend.
 STEP_SIZE = 0.001
+
+#: Number of communication steps in the fixture window (``stop/step``).
+STEP_COUNT = round((STOP_TIME - START_TIME) / STEP_SIZE)
+
+#: SSD and system names; engines prefix result columns with these.
+SSD_NAME = "RampToIntegrator"
+SYSTEM_NAME = "system"
+CONTAINER_NAMES = (SSD_NAME, SYSTEM_NAME)
+
+# Level markers and the file each test file belongs to. A test may carry
+# an explicit level marker of its own to override the file default.
+LEVEL_MARKERS = (
+    "level_static",
+    "level_unit",
+    "level_component",
+    "level_contract",
+    "level_integration",
+    "level_system",
+    "level_acceptance",
+)
+
+FILE_LEVELS = {
+    "test_markers.py": "level_static",
+    "test_result.py": "level_unit",
+    "test_spec.py": "level_unit",
+    "test_generate_fmus.py": "level_unit",
+    "test_interface.py": "level_component",
+    "test_runtime.py": "level_component",
+    "test_backends.py": "level_integration",
+    "test_cli.py": "level_system",
+    "test_permutations.py": "level_system",
+}
+
+
+def pytest_collection_modifyitems(config, items):
+    """Apply the file-level marker, then record what was collected."""
+    for item in items:
+        if not any(item.get_closest_marker(name) for name in LEVEL_MARKERS):
+            level = FILE_LEVELS.get(item.path.name)
+            if level is not None:
+                item.add_marker(getattr(pytest.mark, level))
+    COLLECTED[:] = items
+
+
+#: Node IDs and markers of the collected tests, for the marker budget test.
+COLLECTED: list = []
+
+
+@pytest.fixture(scope="session")
+def collected_items() -> list:
+    """The items recorded by :func:`pytest_collection_modifyitems`."""
+    return COLLECTED
 
 
 def analytic_source(t: float) -> float:
@@ -68,14 +129,27 @@ def test_fmus(tmp_path_factory: pytest.TempPathFactory) -> list[Path]:
     """The test FMUs as ``[RampSource.fmu, Integrator.fmu]``.
 
     Reuses an existing pair when ``PYSSP_SIMULATE_TEST_FMU_DIR`` points
-    at one; otherwise compiles them with omc into a session temporary
+    at one, after checking that the directory matches its provenance
+    manifest; otherwise compiles them with omc into a session temporary
     directory, skipping when the compiler is not installed.
     """
     from_env = os.environ.get(FMU_DIR_ENV)
     if from_env:
-        cached = [Path(from_env) / name for name in FMU_NAMES]
-        if all(path.is_file() for path in cached):
-            return cached
+        cache_dir = Path(from_env)
+        cached = [cache_dir / name for name in FMU_NAMES]
+        missing = [path.name for path in cached if not path.is_file()]
+        if missing:
+            pytest.fail(
+                f"{FMU_DIR_ENV}={cache_dir} is missing {', '.join(missing)}; "
+                "fix the path or unset the variable"
+            )
+        problems = verify_manifest(cache_dir)
+        if problems:
+            pytest.fail(
+                f"{FMU_DIR_ENV}={cache_dir} is not a valid FMU cache: "
+                + "; ".join(problems)
+            )
+        return cached
 
     if shutil.which("omc") is None:
         pytest.skip(
@@ -84,13 +158,6 @@ def test_fmus(tmp_path_factory: pytest.TempPathFactory) -> list[Path]:
         )
 
     return generate_fmus(tmp_path_factory.mktemp("fmus"))
-
-
-def _default_experiment():
-    """Build the SSD default experiment for the test SSP."""
-    from pyssp_standard.ssd import DefaultExperiment
-
-    return DefaultExperiment(start_time=START_TIME, stop_time=STOP_TIME)
 
 
 def _add_cosim_algorithm(ssp_path: Path) -> None:
@@ -148,43 +215,37 @@ def _build_ssp(ssp_path: Path, fmu_paths: list[Path]) -> None:
     ``resources/``.
     """
     from pyssp_standard import SSP
-    from pyssp_standard.ssd import Component, Connection, Connector, System
 
     with SSP(ssp_path, mode="w") as ssp:
         with ssp.system_structure() as ssd:
-            source = Component()
-            source.component_type = "application/x-fmu-sharedlibrary"
-            source.name = "RampSource"
-            source.source = "resources/RampSource.fmu"
-            source.implementation = "CoSimulation"
-            source.connectors = [Connector(name="y", kind="output", type_name="Real")]
+            system = ssd.new_system(SYSTEM_NAME)
 
-            integrator = Component()
-            integrator.component_type = "application/x-fmu-sharedlibrary"
-            integrator.name = "Integrator"
-            integrator.source = "resources/Integrator.fmu"
-            integrator.implementation = "CoSimulation"
-            integrator.connectors = [
-                Connector(name="u", kind="input", type_name="Real"),
-                Connector(name="y", kind="output", type_name="Real"),
-            ]
+            source = system.add_component(
+                "RampSource",
+                source="resources/RampSource.fmu",
+                component_type="application/x-fmu-sharedlibrary",
+                implementation="CoSimulation",
+            )
+            source.add_connector("y", "output", "Real")
 
-            connection = Connection(
+            integrator = system.add_component(
+                "Integrator",
+                source="resources/Integrator.fmu",
+                component_type="application/x-fmu-sharedlibrary",
+                implementation="CoSimulation",
+            )
+            integrator.add_connector("u", "input", "Real")
+            integrator.add_connector("y", "output", "Real")
+
+            system.add_connection(
                 start_element="RampSource",
                 start_connector="y",
                 end_element="Integrator",
                 end_connector="u",
             )
 
-            system = System(name="system")
-            system.elements.append(source)
-            system.elements.append(integrator)
-            system.connections.append(connection)
-
-            ssd.xml.system = system
-            ssd.xml.name = "RampToIntegrator"
-            ssd.xml.version = "1.0"
-            ssd.xml.default_experiment = _default_experiment()
+            ssd.rename(SSD_NAME)
+            ssd.set_default_experiment(start_time=START_TIME, stop_time=STOP_TIME)
 
         for fmu_path in fmu_paths:
             ssp.add_resource(fmu_path)
@@ -237,7 +298,14 @@ def ssp_dir(
 
 @pytest.fixture()
 def spec_kwargs():
-    """Common simulation settings for the fixture package."""
+    """Common simulation settings for the fixture package.
+
+    ``--emitEvents=false`` is OMSimulator-only and ignored by the other
+    backends. With the 1 ms fixed step, OMSimulator otherwise writes an
+    extra event row per step, so the same timestamp appears twice; the
+    fixture chain has no events, and disabling event output keeps exactly
+    one row per documented step (see ``test_backends.assert_sample_grid``).
+    """
     return {
         "start_time": START_TIME,
         "stop_time": STOP_TIME,
@@ -245,4 +313,5 @@ def spec_kwargs():
         # ssp4sim refuses to run without an explicit tolerance, so the shared
         # settings name one; backends without a tolerance setting ignore it.
         "tolerance": 1e-4,
+        "omsimulator_options": ("--emitEvents=false",),
     }

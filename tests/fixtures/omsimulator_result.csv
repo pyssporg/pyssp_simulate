@@ -1,0 +1,4 @@
+"time","system.RampSource.der(_D_outputAlias_y)","system.RampSource.y","system.Integrator._D_outputAlias_y","system.Integrator.der(_D_outputAlias_y)","system.Integrator.u","system.Integrator.y"
+0, 1, 0, 0, 0, 0, 0
+0.001, 1, 0.001, 0, 0, 0, 0
+0.002, 1, 0.002, 1e-06, 0.001, 0.001, 1e-06

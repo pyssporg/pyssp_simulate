@@ -66,6 +66,16 @@ packages = ["src/pyssp_simulate"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "level_static: suite configuration and collected-test contracts",
+    "level_unit: pure functions with no filesystem or engine",
+    "level_component: one module against synthetic inputs",
+    "level_contract: adapter boundary with a stubbed engine",
+    "level_integration: a real simulation engine runs an SSP package",
+    "level_system: CLI and batch workflow through the public entry points",
+    "level_acceptance: end-to-end acceptance over committed fixtures",
+    "slow: takes noticeably longer than the default run budget",
+]
 
 [tool.ruff]
 line-length = 100
