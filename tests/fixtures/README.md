@@ -1,26 +1,28 @@
 # Test fixtures
 
-## `omsimulator_result.csv`
+Committed test data lives one directory per case:
 
-A recorded excerpt of the OMSimulator result file for the fixture package
-(`tests/conftest.py`, `RampToIntegrator.ssp`): the exact header OMSimulator
-3.0.0 writes for the ramp-to-integrator chain, plus the first three data
-rows, verbatim.
+```
+tests/fixtures/<case>/input.<ext>
+tests/fixtures/<case>/case.md
+```
 
-Purpose: the stubbed OMSimulator in `tests/test_backends.py` writes this
-file instead of a hand-invented header, so the fake exercises the real
-engine's column shape (quoted names, `system.` container prefix, and the
-`_D_outputAlias` / derivative columns). `test_backends.py` asserts the
-stubbed and the real backend produce the same canonical column set.
+`case.md` records the provenance, the fault the case pins, the independent
+oracle, and the update policy; `tests/test_fixture_policy.py` enforces the
+layout. No loose data files sit directly under this directory, and the
+recording is never regenerated automatically — `tests/support/fixture_guard.py`
+fails the session if a test modifies it.
 
-Recorded with:
+## Cases
 
-- engine: OMSimulator 3.0.0 (`OMSimulator` Python package)
-- fixture constants: `START_TIME=0.0`, `STOP_TIME=1.0`, `STEP_SIZE=0.001`
-- SSD name `RampToIntegrator`, system name `system`
-- capture: run the backend with a persistent `working_dir` and copy the
-  header plus the first rows of `<working_dir>/result.csv`.
+- [`omsimulator-recording/`](omsimulator-recording/case.md) — verbatim
+  OMSimulator 3.0.0 result header and first rows for the
+  `RampToIntegrator` fixture package; pins fake/real header agreement in
+  `tests/test_backends.py`.
 
-Do not canonicalize the header by hand: the point of the fixture is the
-raw engine output. Regenerate it only when the recorded engine version or
-the fixture naming changes, and record the new provenance here.
+## Not fixtures
+
+`tests/fmus/` holds the committed Modelica sources (`TestFMUs.mo`,
+`build_fmus.mos`) for the FMUs compiled at test time. The compiled FMUs are
+generated into a temporary or cache directory by `tests/generate_fmus.py`,
+never committed here. See `tests/README.md` for the full layout.

@@ -50,6 +50,7 @@ from pathlib import Path
 
 import pytest
 from tests.generate_fmus import FMU_NAMES, generate_fmus, verify_manifest
+from tests.support import fixture_guard
 
 # Environment variable pointing at a directory with prebuilt test FMUs.
 FMU_DIR_ENV = "PYSSP_SIMULATE_TEST_FMU_DIR"
@@ -83,6 +84,7 @@ LEVEL_MARKERS = (
 
 FILE_LEVELS = {
     "test_markers.py": "level_static",
+    "test_fixture_policy.py": "level_static",
     "test_result.py": "level_unit",
     "test_spec.py": "level_unit",
     "test_generate_fmus.py": "level_unit",
@@ -92,6 +94,16 @@ FILE_LEVELS = {
     "test_cli.py": "level_system",
     "test_permutations.py": "level_system",
 }
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Snapshot the committed fixtures before any test runs."""
+    fixture_guard.snapshot()
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Fail the run when a test changed a committed fixture."""
+    fixture_guard.check(session)
 
 
 def pytest_collection_modifyitems(config, items):

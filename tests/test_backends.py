@@ -32,6 +32,7 @@ from tests.conftest import (
     analytic_integrator,
     analytic_source,
 )
+from tests.support.fixtures import OMSIMULATOR_RECORDING
 
 from pyssp_simulate import (
     SimulationSpec,
@@ -55,10 +56,6 @@ from pyssp_simulate.backends.ssp4sim_backend import (
 )
 from pyssp_simulate.interface import get_simulator
 from pyssp_simulate.result import read_result_csv
-
-# The recorded OMSimulator result excerpt: the real engine's header for this
-# fixture package plus its first data rows (see tests/fixtures/README.md).
-OMSIMULATOR_FIXTURE = Path(__file__).parent / "fixtures" / "omsimulator_result.csv"
 
 # Documented recording policy of each backend for the fixture window. The
 # fixture has STEP_COUNT = stop/step = 1000 communication steps.
@@ -450,7 +447,7 @@ class _FakeOMInstance:
         if self.write_result:
             # Write the recorded real-engine output shape, not a simplified
             # ``time,Source.y`` header the engine never emits.
-            self.result_path.write_text(OMSIMULATOR_FIXTURE.read_text())
+            self.result_path.write_text(OMSIMULATOR_RECORDING.read_text())
 
     def terminate(self):
         pass
@@ -563,7 +560,7 @@ def test_omsimulator_missing_result_file_raises(
 
 def _recorded_omsimulator_columns() -> tuple[str, ...]:
     return read_result_csv(
-        OMSIMULATOR_FIXTURE, root_system=CONTAINER_NAMES
+        OMSIMULATOR_RECORDING, root_system=CONTAINER_NAMES
     ).dtype.names
 
 
