@@ -39,22 +39,34 @@ dependencies = [
 omsimulator = ["OMSimulator>=3.0.0.post115"]
 # Dymola ``dsres`` MAT result files; only read_dymola_mat needs scipy.
 dymola = ["scipy"]
-# Cross-backend measurement inside permutation runs. pyssp_vv is not on PyPI
-# yet, so this extra documents the intent; install it from the sibling
-# checkout during development (see the repository README).
-measure = ["pyssp-vv[measure]>=0.1"]
-all = ["pyssp_simulate[omsimulator,measure]"]
+# Cross-backend measurement inside permutation runs.
+# Sibling requirements are direct URLs, not index lookups: each URL is an
+# immutable release asset attached by that package's wheels.yml, its tag is
+# v<version>, and an unreleased tag makes the wheel uninstallable.
+measure = [
+    "pyssp-vv[measure] @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
+]
+# Every pip-installable backend plus the optional result reader. Listed
+# explicitly (not as a self-referential extra) so each requirement is
+# visible in the built metadata.
+all = [
+    "OMSimulator>=3.0.0.post115",
+    "scipy",
+    "pyssp-vv[measure] @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
+]
+# The tests import scipy (tests/test_result.py) and pyssp_vv.measure
+# (tests/test_backends.py) unconditionally, so both are development deps,
+# not optional ones.
 dev = [
     "pytest>=7",
     "ruff",
-    "experimental-pyssp-standard>=0.9.1",
-    # The test suite measures with pyssp_vv; install it from the sibling
-    # checkout until it is published: pip install -e ../pyssp_vv[measure]
+    "experimental-pyssp-standard @ https://github.com/pyssporg/experimental_pyssp_standard/releases/download/v0.9.2.dev0/experimental_pyssp_standard-0.9.2.dev0-py3-none-any.whl",
+    "pyssp-vv[measure] @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
+    "scipy",
 ]
 
 [project.scripts]
 pyssp-simulate = "pyssp_simulate.cli:main"
-
 [project.urls]
 Homepage = "https://github.com/pyssporg/pyssp_simulate"
 Repository = "https://github.com/pyssporg/pyssp_simulate"
@@ -62,6 +74,10 @@ Issues = "https://github.com/pyssporg/pyssp_simulate/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyssp_simulate"]
+
+# Sibling requirements above are direct URLs; hatchling refuses them otherwise.
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
