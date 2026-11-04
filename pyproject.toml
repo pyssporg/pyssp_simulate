@@ -47,7 +47,7 @@ all = ["pyssp_simulate[omsimulator,measure]"]
 dev = [
     "pytest>=7",
     "ruff",
-    "pyssp-standard>=0.9.1",
+    "experimental-pyssp-standard>=0.9.1",
     # The test suite measures with pyssp_vv; install it from the sibling
     # checkout until it is published: pip install -e ../pyssp_vv[measure]
 ]
