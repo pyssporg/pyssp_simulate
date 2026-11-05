@@ -24,44 +24,33 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
-# FMPy installs from PyPI on all platforms, so it ships with the base
-# install. The default backend (omsimulator) and the other backends are
-# optional (see [project.optional-dependencies] and the README).
-dependencies = [
-    "numpy>=1.24",
-    "fmpy>=0.3.20",
-]
-
-[project.optional-dependencies]
-# OMSimulator's sdist downloads binaries at install time; it works on
-# current platforms (e.g. Ubuntu 24.04) but can fail on distributions
-# whose build artifacts are no longer published. See README.
-omsimulator = ["OMSimulator>=3.0.0.post115"]
-# Dymola ``dsres`` MAT result files; only read_dymola_mat needs scipy.
-dymola = ["scipy"]
-# Cross-backend measurement inside permutation runs.
+# Every runtime dependency ships in the base install: FMPy from PyPI, the
+# OMSimulator backend (whose sdist downloads binaries at install time; it can
+# fail on distributions whose build artifacts are no longer published), scipy
+# for the Dymola MAT reader, pyssp-vv for cross-backend measurement, and the
+# ssp4sim Python bindings. ssp4sim is not on PyPI and publishes Linux x86_64
+# wheels only, so its requirement is guarded by an environment marker to keep
+# the metadata installable on other platforms.
 # Sibling requirements are direct URLs, not index lookups: each URL is an
 # immutable release asset attached by that package's wheels.yml, its tag is
 # v<version>, and an unreleased tag makes the wheel uninstallable.
-measure = [
-    "pyssp-vv[measure] @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
-]
-# Every pip-installable backend plus the optional result reader. Listed
-# explicitly (not as a self-referential extra) so each requirement is
-# visible in the built metadata.
-all = [
+dependencies = [
+    "numpy>=1.24",
+    "fmpy>=0.3.20",
     "OMSimulator>=3.0.0.post115",
     "scipy",
-    "pyssp-vv[measure] @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
+    "pyssp-vv @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
+    "pyssp4sim @ https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.2/pyssp4sim-0.3.2-cp39-abi3-linux_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
+
+[project.optional-dependencies]
 # The tests import scipy (tests/test_result.py) and pyssp_vv.measure
-# (tests/test_backends.py) unconditionally, so both are development deps,
-# not optional ones.
+# (tests/test_backends.py) unconditionally.
 dev = [
     "pytest>=7",
     "ruff",
     "experimental-pyssp-standard @ https://github.com/pyssporg/experimental_pyssp_standard/releases/download/v0.9.2.dev0/experimental_pyssp_standard-0.9.2.dev0-py3-none-any.whl",
-    "pyssp-vv[measure] @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
+    "pyssp-vv @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
     "scipy",
 ]
 

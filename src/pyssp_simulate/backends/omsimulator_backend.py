@@ -4,8 +4,8 @@ The Python package is published on PyPI as ``OMSimulator`` (version 3.x
 provides the ``OMSimulator`` module used here). The package is an sdist
 that downloads engine binaries at install time, which works on current
 platforms but fails on distributions whose build artifacts are no
-longer published -- that is why it is an optional extra rather than a
-core dependency. See the README for manual installation instructions.
+longer published. It is a base dependency of this package. See the
+README for manual installation instructions.
 """
 
 from __future__ import annotations

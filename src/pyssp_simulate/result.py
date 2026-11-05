@@ -163,7 +163,7 @@ def read_dymola_mat(path: Path | str) -> np.ndarray:
     ``data_2``; the signed row index in ``dataInfo`` encodes negation; a
     ``data_1`` row is a constant series, a ``data_2`` row is a trajectory.
     Returns ``time`` plus one field per named variable, ready for
-    :func:`write_result_csv`. Requires the ``dymola`` extra (scipy).
+    :func:`write_result_csv`. Needs scipy, which is a base dependency.
 
     Variables whose ``dataInfo`` source matrix is neither ``1`` nor ``2``
     are skipped, and a variable named ``time`` is not duplicated (the time

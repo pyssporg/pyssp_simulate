@@ -2,10 +2,11 @@
 
 ssp4sim is a C++ engine with Python bindings (``pyssp4sim``) published as
 Linux x86_64 wheels on the project's GitHub releases -- it is not on
-PyPI, so it cannot be part of this package's install metadata. The
-known-good 0.2.11 wheel can be installed directly:
+PyPI, so the wheel is pinned as a direct reference in this package's base
+dependencies, guarded by a platform marker because only Linux x86_64 is
+published:
 
-    pip install https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.2.11/pyssp4sim-0.2.11-cp39-abi3-linux_x86_64.whl
+    pyssp4sim @ https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.2/pyssp4sim-0.3.2-cp39-abi3-linux_x86_64.whl
 
 The engine is driven by a JSON configuration file and is executed in a
 child process for two reasons: it does not reliably return control to

@@ -14,8 +14,8 @@ Supported backends:
 | Name          | Engine                                                                                       | Install                                   |
 | ------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | `fmpy`        | [FMPy](https://pypi.org/project/FMPy/), pure-Python co-simulation master                     | PyPI, included in the base install        |
-| `omsimulator` | [OMSimulator](https://pypi.org/project/OMSimulator/), OpenModelica's FMI co-simulation environment | PyPI, optional extra (see caveats)   |
-| `ssp4sim`     | [ssp4sim](https://github.com/jkCXf9X4/ssp4sim), C++ engine with Python bindings              | GitHub releases, Linux x86_64, experimental |
+| `omsimulator` | [OMSimulator](https://pypi.org/project/OMSimulator/), OpenModelica's FMI co-simulation environment | PyPI, included in the base install (see caveats) |
+| `ssp4sim`     | [ssp4sim](https://github.com/jkCXf9X4/ssp4sim), C++ engine with Python bindings              | GitHub releases wheel, Linux x86_64, included in the base install |
 | `cosim`       | [cosim](https://github.com/open-simulation-platform/cosim-cli), Open Simulation Platform command-line co-simulator | GitHub releases binary (experimental) |
 
 ## Installation
@@ -43,31 +43,21 @@ or from a checkout:
 pip install .
 ```
 
-The base install ships FMPy, which installs reliably from PyPI on every
-platform. FMPy's SSP support is intentionally simple: it records the values of
-the connectors declared in the SSD, simulates FMUs with a fixed-step Jacobi
-scheme, and validates SSD files against its bundled SSP 1.0 schema. Use the
-other backends for advanced SSP features.
+The base install ships FMPy, OMSimulator, numpy, scipy, and `pyssp-vv`. FMPy
+installs reliably from PyPI on every platform.
+FMPy's SSP support is intentionally simple: it records the values of the
+connectors declared in the SSD, simulates FMUs with a fixed-step Jacobi scheme,
+and validates SSD files against its bundled SSP 1.0 schema. Use the other
+backends for advanced SSP features.
 
-The default backend is `omsimulator`, which must be installed separately (see
-below). Naming no backend selects it; requesting any backend whose engine is
-not installed raises `BackendNotAvailableError` with an install hint. There is
-no automatic fallback to a different engine.
-
-Optional extras use the same syntax — `pip install ".[all]"` from a
-checkout, `pip install "pyssp_simulate[all] @ <release-wheel-url>"` from a
-release, or plain `pip install "pyssp_simulate[all]"` once the package is
-published on PyPI:
-
-```bash
-pip install ".[all]"                  # every backend that is pip-installable
-```
+The default backend is `omsimulator`, which the base install provides (see the
+caveats below). Naming no backend selects it; requesting any backend whose
+engine is not installed raises `BackendNotAvailableError` with an install hint.
+There is no automatic fallback to a different engine.
 
 ### OMSimulator
 
-```bash
-pip install ".[omsimulator]"
-```
+OMSimulator comes with the base install.
 
 The OMSimulator package on PyPI is an sdist that downloads engine binaries
 during installation, and the download URLs point at nightly build artifacts
@@ -90,12 +80,13 @@ current platforms but can fail on some distributions (for example Ubuntu
 
 ### ssp4sim (experimental)
 
-ssp4sim is not on PyPI. Linux x86_64 wheels are published on
-[GitHub releases](https://github.com/jkCXf9X4/ssp4sim/releases); the
-known-good 0.2.11 build installs directly:
+ssp4sim is not on PyPI. Its Linux x86_64 wheels are pinned as a direct
+reference in the base dependencies (guarded by a platform marker), so a
+Linux x86_64 install already has the known-good 0.3.0 build; elsewhere
+install it by hand:
 
 ```bash
-pip install https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.2.11/pyssp4sim-0.2.11-cp39-abi3-linux_x86_64.whl
+pip install https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.2/pyssp4sim-0.3.2-cp39-abi3-linux_x86_64.whl
 ```
 
 The engine is driven by a generated JSON configuration and runs in a
@@ -134,9 +125,11 @@ platforms and versions are untested.
 ### Why isn't everything in the base install?
 
 FMPy is the only engine that installs reliably from PyPI on every platform,
-so it is a core dependency. OMSimulator's sdist can fail on distributions whose
-nightly build artifacts are no longer published, so it is opt-in. ssp4sim and
-the cosim binary are not on PyPI at all.
+so it is the unguarded core dependency. OMSimulator's sdist can fail on
+distributions whose nightly build artifacts are no longer published, and ssp4sim
+publishes only Linux x86_64 wheels; both are direct references guarded by
+environment markers. The cosim binary is not a Python package at all and stays
+manual.
 
 ## Quickstart
 
@@ -187,7 +180,7 @@ result = SimulationResult.from_csv("fmpy.csv")
 ```
 
 Dymola `dsres` MAT files are read into the same structured array shape; this
-needs the `dymola` extra (`pip install ".[dymola]"`, which installs scipy):
+needs scipy, which the base install provides:
 
 ```python
 from pyssp_simulate import read_dymola_mat, write_result_csv
@@ -298,8 +291,8 @@ for run in runs:
 With `output_dir` set, permutation `i` writes `runs/perm_<i>/<backend>.csv`
 for every backend that ran, a `spec.json` manifest, and — when two or more
 backends produced results — cross-backend metrics as
-`runs/perm_<i>/metrics.csv`. Measuring requires `pyssp-vv[measure]`; without
-it, permutations still run and the measurement is omitted.
+`runs/perm_<i>/metrics.csv`. Measuring uses `pyssp_vv.measure`, which the base
+install provides.
 
 ## Backend registry
 

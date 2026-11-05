@@ -40,7 +40,7 @@ The example above describes 2 stop times x 2 step sizes = 4 permutations
 for each of the two backends. With ``output_dir`` set, permutation ``i``
 writes ``<output_dir>/perm_<i>/<backend>.csv`` for every backend that
 ran, a ``<output_dir>/perm_<i>/spec.json`` manifest and -- when two or
-more backends produced results and ``pyssp-vv[measure]`` is installed --
+more backends produced results and ``pyssp-vv`` is installed --
 the cross-backend metrics as ``<output_dir>/perm_<i>/metrics.csv``. Indices
 are formatted with four digits (``perm_0000``, ``perm_0001``, ...).
 
@@ -264,14 +264,14 @@ def _measure(results: dict[str, SimulationResult]) -> tuple[Comparison, ...]:
     """Measure every result against the first one, using ``pyssp_vv``.
 
     This is a convenience inside the package: the import is local so that
-    ``pyssp_simulate`` installs and imports without the measurement extra. The
-    surface is not re-exported, and judgment is not performed here.
+    ``pyssp_simulate`` imports without pulling in ``pyssp_vv``. The surface is
+    not re-exported, and judgment is not performed here.
     """
     try:
         from pyssp_vv.measure import Trajectory, compare_many
-    except ImportError as exc:  # pragma: no cover - depends on the extra
+    except ImportError as exc:  # pragma: no cover - depends on the install
         raise ImportError(
-            "Cross-backend measurement requires 'pyssp-vv[measure]'. "
+            "Cross-backend measurement requires 'pyssp-vv'. "
             "Install it, or run with a single backend."
         ) from exc
 

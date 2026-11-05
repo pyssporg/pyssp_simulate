@@ -7,7 +7,7 @@ Public API:
 * :class:`SimulationResult` -- normalized result (structured NumPy array),
   with CSV helpers :func:`read_result_csv` / :func:`write_result_csv` and
   :func:`canonicalize_signal`, plus :func:`read_dymola_mat` for Dymola
-  result files (requires the ``dymola`` extra).
+  result files (scipy is a base dependency).
 * :class:`RuntimeSSP` / :func:`prepare_runtime_ssp` -- normalized SSP archive
   and unpacked root for engine adapters and consumers that must invoke an
   engine directly.
