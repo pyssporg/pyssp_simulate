@@ -1,16 +1,17 @@
-# Build the wheel on every push to main and keep it as a downloadable
-# artifact, so packaging breakage shows up on normal commits instead of at
-# release time.
+# Build the wheel and sdist on every push to main and on version tags,
+# and keep them as downloadable artifacts, so packaging breakage shows
+# up on normal commits instead of at release time.
 #
 # This workflow only builds and checks metadata: it never publishes. Tag
-# releases (and the GitHub Release upload) stay in release.yml.
+# releases (and the GitHub Release upload, plus the tag-vs-version guard)
+# stay in release.yml.
 
-name: Wheels
+name: wheels
 
 on:
   push:
     branches: [main]
-  pull_request:
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -24,17 +25,49 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build the wheel
+      - name: Install
         run: |
           python -m pip install --upgrade pip build
-          python -m build --wheel
+      - name: Build wheel and sdist
+        run: python -m build --wheel --sdist
       - name: Check the built metadata
         run: |
           python -m pip install twine
           twine check dist/*
-      - name: Upload the wheel
+      - name: Check artifacts
+        # The artifact names and metadata are checked instead of being
+        # assumed, so a packaging change that breaks the layout fails here.
+        run: |
+          python - <<'PY'
+          import pathlib
+          import zipfile
+
+          dist = pathlib.Path("dist")
+          wheels = sorted(dist.glob("*.whl"))
+          sdists = sorted(dist.glob("*.tar.gz"))
+          assert len(wheels) == 1, wheels
+          assert len(sdists) == 1, sdists
+          assert not any("0.0.0" in path.name for path in dist.iterdir()), list(dist.iterdir())
+
+          wheel = wheels[0]
+          version = wheel.name.split("-", 1)[1].split("-")[0]
+          sdist_version = sdists[0].name.removesuffix(".tar.gz").split("-", 1)[1]
+          assert version != "0.0.0", wheel.name
+          assert sdist_version == version, sdists[0].name
+
+          with zipfile.ZipFile(wheel) as zf:
+              assert zf.testzip() is None
+              metadata = next(
+                  name for name in zf.namelist()
+                  if name.endswith(".dist-info/METADATA")
+              )
+              text = zf.read(metadata).decode()
+          assert "Name: pyssp_simulate" in text, text
+          print(wheel.name)
+          PY
+      - name: Upload the artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pyssp_simulate-wheel
-          path: dist/*.whl
+          name: dist
+          path: dist/
           if-no-files-found: error
