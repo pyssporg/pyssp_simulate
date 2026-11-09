@@ -50,7 +50,10 @@ jobs:
       - name: Smoke test the wheel
         run: |
           python -m venv /tmp/smoke
-          /tmp/smoke/bin/pip install dist/*.whl
+          # Pin the OMSimulator sdist whose nightly binary is still published:
+          # newer sdists (post198) fetch a linux-focal URL that 404s on the
+          # current runner image. post115 is the declared minimum anyway.
+          /tmp/smoke/bin/pip install "OMSimulator==3.0.0.post115" dist/*.whl
           /tmp/smoke/bin/python -c "import pyssp_simulate"
           /tmp/smoke/bin/pyssp-simulate backends
       - name: Publish the GitHub release
