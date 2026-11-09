@@ -27,7 +27,7 @@ pyssp_simulate is not yet published on PyPI; install the wheel from a
 checkout or git clone needed:
 
 ```bash
-pip install https://github.com/pyssporg/pyssp_simulate/releases/download/v0.1.0/pyssp_simulate-0.1.0-py3-none-any.whl
+pip install https://github.com/pyssporg/pyssp_simulate/releases/download/v0.3.0/pyssp_simulate-0.3.0-py3-none-any.whl
 ```
 
 (Bump the version in the URL to pin a different release.) Alternatively,
@@ -84,11 +84,11 @@ current platforms but can fail on some distributions (for example Ubuntu
 
 ssp4sim is not on PyPI. Its Linux x86_64 wheels are pinned as a direct
 reference in the base dependencies (guarded by a platform marker), so a
-Linux x86_64 install already has the known-good 0.3.0 build; elsewhere
+Linux x86_64 install already has the known-good 0.3.4 build; elsewhere
 install it by hand:
 
 ```bash
-pip install https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.2/pyssp4sim-0.3.2-cp39-abi3-linux_x86_64.whl
+pip install https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.4/pyssp4sim-0.3.4-cp39-abi3-linux_x86_64.whl
 ```
 
 The engine is driven by a generated JSON configuration and runs in a

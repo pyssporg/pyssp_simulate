@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyssp_simulate"
-version = "0.2.0"
+version = "0.3.0"
 description = "Simulate SSP (System Structure and Parameterization) packages through a common interface and normalise the results."
 readme = "README.md"
 license = "MIT"
@@ -39,8 +39,8 @@ dependencies = [
     "fmpy>=0.3.20",
     "OMSimulator>=3.0.0.post115",
     "scipy",
-    "pyssp-vv @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
-    "pyssp4sim @ https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.2/pyssp4sim-0.3.2-cp39-abi3-linux_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "pyssp-vv @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.2.0/pyssp_vv-0.2.0-py3-none-any.whl",
+    "pyssp4sim @ https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.4/pyssp4sim-0.3.4-cp39-abi3-linux_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [project.optional-dependencies]
@@ -49,8 +49,8 @@ dependencies = [
 dev = [
     "pytest>=7",
     "ruff",
-    "experimental-pyssp-standard @ https://github.com/pyssporg/experimental_pyssp_standard/releases/download/v0.9.2.dev0/experimental_pyssp_standard-0.9.2.dev0-py3-none-any.whl",
-    "pyssp-vv @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.1.0/pyssp_vv-0.1.0-py3-none-any.whl",
+    "experimental-pyssp-standard @ https://github.com/pyssporg/experimental_pyssp_standard/releases/download/v0.9.3.dev0/experimental_pyssp_standard-0.9.3.dev0-py3-none-any.whl",
+    "pyssp-vv @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.2.0/pyssp_vv-0.2.0-py3-none-any.whl",
     "scipy",
 ]
 

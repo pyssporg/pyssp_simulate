@@ -6,7 +6,7 @@ PyPI, so the wheel is pinned as a direct reference in this package's base
 dependencies, guarded by a platform marker because only Linux x86_64 is
 published:
 
-    pyssp4sim @ https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.2/pyssp4sim-0.3.2-cp39-abi3-linux_x86_64.whl
+    pyssp4sim @ https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.4/pyssp4sim-0.3.4-cp39-abi3-linux_x86_64.whl
 
 The engine is driven by a JSON configuration file and is executed in a
 child process for two reasons: it does not reliably return control to
