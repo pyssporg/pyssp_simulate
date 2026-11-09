@@ -17,6 +17,7 @@ engine installed.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -49,9 +50,13 @@ from pyssp_simulate.backends.cosim_backend import (
     resolve_cosim_binary,
 )
 from pyssp_simulate.backends.fmpy_backend import _canonicalize, _get_connections
-from pyssp_simulate.backends.omsimulator_backend import OMSimulatorSimulator
+from pyssp_simulate.backends.omsimulator_backend import (
+    OMSIMULATOR_PATH_ENV,
+    OMSimulatorSimulator,
+)
 from pyssp_simulate.backends.ssp4sim_backend import (
     DIAGNOSTIC_ARTIFACTS,
+    SSP4SIM_PATH_ENV,
     SSP4SimSimulator,
 )
 from pyssp_simulate.interface import get_simulator
@@ -304,7 +309,7 @@ def _install_ssp4sim_stub(monkeypatch: pytest.MonkeyPatch) -> dict:
     """Replace the child process: record the config and fabricate its output."""
     observed: dict = {}
 
-    def fake_run(command, capture_output=True, text=True, timeout=None):
+    def fake_run(command, capture_output=True, text=True, timeout=None, env=None):
         config = json.loads(Path(command[-1]).read_text())
         simulation = config["simulation"]
         runtime_root = Path(simulation["ssp"])
@@ -313,6 +318,7 @@ def _install_ssp4sim_stub(monkeypatch: pytest.MonkeyPatch) -> dict:
             runtime_root / "resources" / "Source" / "modelDescription.xml"
         ).is_file()
         observed["tolerance"] = simulation.get("tolerance")
+        observed["env"] = env
         Path(simulation["recording"]["result_file"]).write_text(
             "time,Source.y\n0.0,0.0\n1.0,1.0\n"
         )
@@ -370,6 +376,56 @@ def _ssp4sim_spec(ssp: Path, **kwargs) -> SimulationSpec:
     return SimulationSpec(
         ssp=ssp, start_time=0.0, stop_time=1.0, step_size=0.1, tolerance=1e-3, **kwargs
     )
+
+
+def _fake_engine_package(tmp_path: Path, package: str) -> Path:
+    """A directory containing a minimal ``package`` engine module."""
+    engine_dir = tmp_path / "engines"
+    package_dir = engine_dir / package
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("")
+    return engine_dir
+
+
+@pytest.mark.level_contract
+def test_ssp4sim_override_dir_marks_available(tmp_path: Path, monkeypatch):
+    engine_dir = _fake_engine_package(tmp_path, "pyssp4sim")
+    monkeypatch.setenv(SSP4SIM_PATH_ENV, str(engine_dir))
+
+    assert SSP4SimSimulator.available() == (True, None)
+
+
+@pytest.mark.level_contract
+def test_ssp4sim_invalid_override_marks_unavailable(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv(SSP4SIM_PATH_ENV, str(tmp_path / "nowhere"))
+
+    ok, reason = SSP4SimSimulator.available()
+    assert ok is False
+    assert SSP4SIM_PATH_ENV in reason
+
+
+@pytest.mark.level_contract
+def test_ssp4sim_invalid_override_raises_in_simulate(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv(SSP4SIM_PATH_ENV, str(tmp_path / "nowhere"))
+    ssp = _synthetic_ssp_dir(tmp_path)
+
+    with pytest.raises(RuntimeError, match=SSP4SIM_PATH_ENV):
+        SSP4SimSimulator().simulate(_ssp4sim_spec(ssp))
+
+
+@pytest.mark.level_contract
+def test_ssp4sim_override_reaches_the_child(tmp_path: Path, monkeypatch):
+    """The override is handed to the child as the first PYTHONPATH entry."""
+    engine_dir = _fake_engine_package(tmp_path, "pyssp4sim")
+    monkeypatch.setenv(SSP4SIM_PATH_ENV, str(engine_dir))
+    ssp = _synthetic_ssp_dir(tmp_path)
+    observed = _install_ssp4sim_stub(monkeypatch)
+
+    SSP4SimSimulator().simulate(_ssp4sim_spec(ssp))
+
+    env = observed["env"]
+    assert env is not None
+    assert env["PYTHONPATH"].split(os.pathsep)[0] == str(engine_dir)
 
 
 def _write_fake_ssp4sim_child(tmp_path: Path, body: str) -> Path:
@@ -492,6 +548,98 @@ def _omsimulator_spec(ssp: Path, **kwargs) -> SimulationSpec:
     return SimulationSpec(
         ssp=ssp, start_time=0.0, stop_time=1.0, step_size=0.1, **kwargs
     )
+
+
+@pytest.mark.level_contract
+def test_omsimulator_override_dir_marks_available(tmp_path: Path, monkeypatch):
+    engine_dir = _fake_engine_package(tmp_path, "OMSimulator")
+    monkeypatch.setenv(OMSIMULATOR_PATH_ENV, str(engine_dir))
+
+    original_path = list(sys.path)
+    try:
+        assert OMSimulatorSimulator.available() == (True, None)
+    finally:
+        sys.path[:] = original_path
+
+
+@pytest.mark.level_contract
+def test_omsimulator_invalid_override_marks_unavailable(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv(OMSIMULATOR_PATH_ENV, str(tmp_path / "nowhere"))
+
+    ok, reason = OMSimulatorSimulator.available()
+    assert ok is False
+    assert OMSIMULATOR_PATH_ENV in reason
+
+
+@pytest.mark.level_contract
+def test_omsimulator_invalid_override_raises_in_simulate(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv(OMSIMULATOR_PATH_ENV, str(tmp_path / "nowhere"))
+    ssp = _synthetic_ssp_dir(tmp_path)
+
+    with pytest.raises(RuntimeError, match=OMSIMULATOR_PATH_ENV):
+        OMSimulatorSimulator().simulate(_omsimulator_spec(ssp))
+
+
+@pytest.mark.level_contract
+def test_omsimulator_override_package_is_used_by_simulate(
+    tmp_path: Path, monkeypatch
+):
+    """A real import from the override directory wins over the pip engine."""
+    engine_dir = tmp_path / "engines"
+    package_dir = engine_dir / "OMSimulator"
+    package_dir.mkdir(parents=True)
+    (package_dir / "capi.py").write_text(
+        "class Status:\n"
+        "    ok = 'ok'\n"
+        "class Capi:\n"
+        "    @staticmethod\n"
+        "    def setCommandLineOption(option):\n"
+        "        return 'ok'\n"
+    )
+    (package_dir / "__init__.py").write_text(
+        "from OMSimulator.capi import Capi, Status\n"
+        "class Settings:\n"
+        "    suppressPath = True\n"
+        "class _Instance:\n"
+        "    def setStartTime(self, value):\n"
+        "        pass\n"
+        "    def setStopTime(self, value):\n"
+        "        pass\n"
+        "    def setLoggingInterval(self, value):\n"
+        "        pass\n"
+        "    def setFixedStepSize(self, value):\n"
+        "        pass\n"
+        "    def setTolerance(self, value):\n"
+        "        pass\n"
+        "    def setResultFile(self, path):\n"
+        "        self.result_path = path\n"
+        "    def initialize(self):\n"
+        "        pass\n"
+        "    def simulate(self):\n"
+        "        open(self.result_path, 'w').write('time,Source.y\\n0.0,0.0\\n1.0,1.0\\n')\n"
+        "    def terminate(self):\n"
+        "        pass\n"
+        "    def delete(self):\n"
+        "        pass\n"
+        "class SSP:\n"
+        "    def __init__(self, archive):\n"
+        "        self.archive = archive\n"
+        "    def instantiate(self):\n"
+        "        return _Instance()\n"
+    )
+    monkeypatch.setenv(OMSIMULATOR_PATH_ENV, str(engine_dir))
+    monkeypatch.delitem(sys.modules, "OMSimulator", raising=False)
+    monkeypatch.delitem(sys.modules, "OMSimulator.capi", raising=False)
+
+    ssp = _synthetic_ssp_dir(tmp_path)
+    original_path = list(sys.path)
+    try:
+        result = OMSimulatorSimulator().simulate(_omsimulator_spec(ssp))
+    finally:
+        sys.path[:] = original_path
+
+    assert result.backend == "omsimulator"
+    assert "Source.y" in result.signals
 
 
 @pytest.mark.level_contract

@@ -68,10 +68,12 @@ current platforms but can fail on some distributions (for example Ubuntu
 1. Download the nightly tarball for your platform from
    `https://build.openmodelica.org/omsimulator/nightly/<platform>/`
    (for example `linux-focal-amd64`).
-2. Copy from the tarball into your environment's `site-packages`:
+2. Either copy into your environment's `site-packages`:
    - `lib/x86_64-linux-gnu/OMSimulator/` — the Python package directory,
    - `lib/x86_64-linux-gnu/libOMSimulator.so` — into the `OMSimulator` package
-     directory.
+     directory,
+   or keep the package in place and point `OMSIMULATOR_PYTHON_PATH` at its
+   parent directory (see [Overriding a pip-installed engine](#overriding-a-pip-installed-engine)).
 3. Verify the install:
 
    ```bash
@@ -121,6 +123,32 @@ a segfault — and `SimulationSpec.step_size` does not apply to this backend.
 **Status: experimental.** The backend is validated against cosim v0.8.0 on
 Linux x86_64 (the v0.9.0 release binaries require GLIBC ≥ 2.38); other
 platforms and versions are untested.
+
+### Overriding a pip-installed engine
+
+The `omsimulator` and `ssp4sim` backends resolve their engines as Python
+packages (`OMSimulator`, `pyssp4sim`). A caller can point a backend at a
+non-pip installation — a manually installed engine, or a local source
+build — with an environment variable naming the directory that contains the
+engine package:
+
+| Backend | Environment variable | Directory contains |
+| --- | --- | --- |
+| `omsimulator` | `OMSIMULATOR_PYTHON_PATH` | an `OMSimulator` package |
+| `ssp4sim` | `SSP4SIM_PYTHON_PATH` | a `pyssp4sim` package (for example `build/public/python_api` from a source checkout) |
+
+For example, to run the ssp4sim backend against a local source build instead
+of the pip-installed wheel:
+
+```bash
+export SSP4SIM_PYTHON_PATH=/path/to/ssp4sim/build/public/python_api
+pyssp-simulate run model.ssp --backend ssp4sim --stop-time 1
+```
+
+The override is used exclusively when set: a value that does not contain the
+expected package disables the backend — `simulate` raises
+`BackendNotAvailableError` — rather than silently falling back to the
+pip-installed engine.
 
 ### Why isn't everything in the base install?
 

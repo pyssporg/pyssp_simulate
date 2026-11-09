@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from importlib.util import find_spec
+from pathlib import Path
 from typing import ClassVar
 
 from pyssp_simulate.result import SimulationResult
@@ -54,6 +56,31 @@ def import_module_available(module_name: str) -> bool:
         return find_spec(module_name) is not None
     except (ImportError, ValueError):
         return False
+
+
+def engine_override_path(env_var: str, module_name: str) -> str | None:
+    """Return the search directory named by ``env_var`` for ``module_name``.
+
+    Backends that call a pip-installed engine package can let a caller
+    point at an alternate installation through an environment variable,
+    the same pattern as ``COSIM_BINARY`` for the cosim executable. The
+    variable must name a directory that directly contains the engine's
+    module (a ``module_name`` package directory or a ``module_name.py``
+    module). Returns ``None`` when the variable is unset or points at a
+    directory that does not contain the module; a stale override never
+    silently falls back to the pip-installed engine.
+    """
+    value = os.environ.get(env_var)
+    if not value:
+        return None
+    candidate = Path(value)
+    if not candidate.is_dir():
+        return None
+    if (candidate / module_name).is_dir() or (
+        candidate / f"{module_name}.py"
+    ).is_file():
+        return str(candidate)
+    return None
 
 
 def get_simulator_class(name: str) -> type[Simulator]:

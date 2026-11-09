@@ -11,32 +11,71 @@ README for manual installation instructions.
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from pyssp_simulate.interface import Simulator, import_module_available
+from pyssp_simulate.interface import (
+    Simulator,
+    engine_override_path,
+    import_module_available,
+)
 from pyssp_simulate.result import SimulationResult, read_result_csv
 from pyssp_simulate.runtime import prepare_runtime_ssp
 from pyssp_simulate.spec import SimulationSpec
+
+#: Environment variable pointing at a directory containing an ``OMSimulator``
+#: package, overriding the pip-installed one.
+OMSIMULATOR_PATH_ENV = "OMSIMULATOR_PYTHON_PATH"
+
+_INVALID_OVERRIDE_REASON = (
+    f"{OMSIMULATOR_PATH_ENV} is set but does not contain an "
+    "`OMSimulator` package; unset it to use the pip-installed engine"
+)
+
+
+def _omsimulator_override_path() -> str | None:
+    """Return the validated override search path, or ``None`` when unset."""
+    return engine_override_path(OMSIMULATOR_PATH_ENV, "OMSimulator")
+
+
+def _apply_omsimulator_override() -> None:
+    """Prepend a valid ``OMSIMULATOR_PYTHON_PATH`` override to ``sys.path``.
+
+    Applied before imports, so the override package is found exactly where
+    the caller pointed it.
+    """
+    override = _omsimulator_override_path()
+    if override is not None and override not in sys.path:
+        sys.path.insert(0, override)
 
 
 class OMSimulatorSimulator(Simulator):
     name = "omsimulator"
     install_hint = (
         "Install OMSimulator alongside pyssp_simulate (see "
-        "https://github.com/pyssporg/pyssp_simulate#omsimulator) or "
-        "manually."
+        "https://github.com/pyssporg/pyssp_simulate#omsimulator), point "
+        f"{OMSIMULATOR_PATH_ENV} at a directory containing an "
+        "`OMSimulator` package, or install manually."
     )
 
     @classmethod
     def available(cls) -> tuple[bool, str | None]:
+        if _omsimulator_override_path() is not None:
+            _apply_omsimulator_override()
+            return True, None
+        if os.environ.get(OMSIMULATOR_PATH_ENV):
+            return False, _INVALID_OVERRIDE_REASON
         if import_module_available("OMSimulator"):
             return True, None
         return False, "the `OMSimulator` package is not installed"
 
     def simulate(self, spec: SimulationSpec) -> SimulationResult:
+        if os.environ.get(OMSIMULATOR_PATH_ENV) and _omsimulator_override_path() is None:
+            raise RuntimeError(_INVALID_OVERRIDE_REASON)
+        _apply_omsimulator_override()
         from OMSimulator import SSP as OMSSP
         from OMSimulator import Settings
         from OMSimulator.capi import Capi, Status

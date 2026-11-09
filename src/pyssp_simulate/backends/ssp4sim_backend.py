@@ -28,17 +28,31 @@ and tree diagnostic files it leaves in the workspace are removed.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from pyssp_simulate.interface import Simulator, import_module_available
+from pyssp_simulate.interface import (
+    Simulator,
+    engine_override_path,
+    import_module_available,
+)
 from pyssp_simulate.result import SimulationResult, read_result_csv
 from pyssp_simulate.runtime import prepare_runtime_ssp
 from pyssp_simulate.spec import SimulationSpec
 
 _CHILD_SCRIPT = Path(__file__).resolve().parent / "ssp4sim_child.py"
+
+#: Environment variable pointing at a directory containing a ``pyssp4sim``
+#: package, overriding the pip-installed wheel.
+SSP4SIM_PATH_ENV = "SSP4SIM_PYTHON_PATH"
+
+_INVALID_OVERRIDE_REASON = (
+    f"{SSP4SIM_PATH_ENV} is set but does not contain a "
+    "`pyssp4sim` package; unset it to use the pip-installed engine"
+)
 
 #: Diagnostics the engine drops into its working directory. They are not part
 #: of the run contract, so the backend removes them after the child exits.
@@ -49,7 +63,9 @@ class SSP4SimSimulator(Simulator):
     name = "ssp4sim"
     install_hint = (
         "Install the pyssp4sim wheel from the ssp4sim GitHub releases "
-        "(Linux x86_64 only); see "
+        "(Linux x86_64 only), or point "
+        f"{SSP4SIM_PATH_ENV} at a directory containing a pyssp4sim "
+        "package (for example a source build); see "
         "https://github.com/jkCXf9X4/ssp4sim/releases."
     )
 
@@ -62,6 +78,10 @@ class SSP4SimSimulator(Simulator):
 
     @classmethod
     def available(cls) -> tuple[bool, str | None]:
+        if engine_override_path(SSP4SIM_PATH_ENV, "pyssp4sim") is not None:
+            return True, None
+        if os.environ.get(SSP4SIM_PATH_ENV):
+            return False, _INVALID_OVERRIDE_REASON
         if import_module_available("pyssp4sim"):
             return True, None
         return False, "the `pyssp4sim` package is not installed"
@@ -69,12 +89,18 @@ class SSP4SimSimulator(Simulator):
     def simulate(self, spec: SimulationSpec) -> SimulationResult:
         """Run one simulation in the ssp4sim child process.
 
+        :raises RuntimeError: when ``SSP4SIM_PYTHON_PATH`` is set but does
+            not contain a ``pyssp4sim`` package.
         :raises ValueError: when the spec carries no explicit tolerance.
         :raises TimeoutError: when the child does not finish within
             ``timeout`` seconds (default :attr:`DEFAULT_TIMEOUT_S`).
         :raises RuntimeError: when the child exits non-zero or writes no
             result file.
         """
+        if os.environ.get(SSP4SIM_PATH_ENV) and (
+            engine_override_path(SSP4SIM_PATH_ENV, "pyssp4sim") is None
+        ):
+            raise RuntimeError(_INVALID_OVERRIDE_REASON)
         # The engine rejects a configuration without the key ("Config:
         # missing key: simulation.tolerance"), so requiring it explicitly is
         # the only alternative to substituting a value of our own.
@@ -112,6 +138,7 @@ class SSP4SimSimulator(Simulator):
                         capture_output=True,
                         text=True,
                         timeout=self.timeout,
+                        env=_child_environment(),
                     )
                 except subprocess.TimeoutExpired as error:
                     raise TimeoutError(
@@ -143,6 +170,24 @@ class SSP4SimSimulator(Simulator):
         if spec.result_file is not None:
             result.write_csv(spec.result_file)
         return result
+
+
+def _child_environment() -> dict[str, str] | None:
+    """Environment for the engine child; ``None`` inherits the current one.
+
+    When ``SSP4SIM_PYTHON_PATH`` is set, its directory is prepended to the
+    child's ``PYTHONPATH`` so the child imports the override ``pyssp4sim``
+    package instead of the pip-installed wheel.
+    """
+    override = engine_override_path(SSP4SIM_PATH_ENV, "pyssp4sim")
+    if override is None:
+        return None
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        override if not existing else override + os.pathsep + existing
+    )
+    return env
 
 
 def _config_payload(

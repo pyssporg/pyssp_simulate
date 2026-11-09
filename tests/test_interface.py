@@ -15,13 +15,60 @@ from pyssp_simulate import (
     get_simulator,
     simulate,
 )
-from pyssp_simulate.interface import get_simulator_class
+from pyssp_simulate.interface import engine_override_path, get_simulator_class
 
 
 def test_registry_contains_all_backends():
     names = backend_names()
     assert set(names) == {"fmpy", "omsimulator", "ssp4sim", "cosim"}
     assert DEFAULT_BACKEND in names
+
+
+# --- engine override environment variables ---------------------------------
+
+
+def test_engine_override_path_accepts_a_package_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    package = tmp_path / "OMSimulator"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    monkeypatch.setenv("OMSIMULATOR_PYTHON_PATH", str(tmp_path))
+
+    assert engine_override_path("OMSIMULATOR_PYTHON_PATH", "OMSimulator") == str(
+        tmp_path
+    )
+
+
+def test_engine_override_path_unset_returns_none(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("SSP4SIM_PYTHON_PATH", raising=False)
+
+    assert engine_override_path("SSP4SIM_PYTHON_PATH", "pyssp4sim") is None
+
+
+def test_engine_override_path_missing_module_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SSP4SIM_PYTHON_PATH", str(tmp_path))
+
+    assert engine_override_path("SSP4SIM_PYTHON_PATH", "pyssp4sim") is None
+
+
+def test_engine_override_path_missing_directory_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SSP4SIM_PYTHON_PATH", str(tmp_path / "nowhere"))
+
+    assert engine_override_path("SSP4SIM_PYTHON_PATH", "pyssp4sim") is None
+
+
+def test_engine_override_path_accepts_a_module_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "engine.py").write_text("")
+    monkeypatch.setenv("ENGINE_PYTHON_PATH", str(tmp_path))
+
+    assert engine_override_path("ENGINE_PYTHON_PATH", "engine") == str(tmp_path)
 
 
 def test_available_backends_reports_fmpy():
