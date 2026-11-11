@@ -15,7 +15,7 @@ Supported backends:
 | ------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | `fmpy`        | [FMPy](https://pypi.org/project/FMPy/), pure-Python co-simulation master                     | PyPI, included in the base install        |
 | `omsimulator` | [OMSimulator](https://pypi.org/project/OMSimulator/), OpenModelica's FMI co-simulation environment | PyPI, included in the base install (see caveats) |
-| `ssp4sim`     | [ssp4sim](https://github.com/jkCXf9X4/ssp4sim), C++ engine with Python bindings              | GitHub releases wheel, Linux x86_64, included in the base install |
+| `ssp4sim`     | [ssp4sim](https://github.com/pyssporg/ssp4sim), C++ engine with Python bindings              | GitHub releases wheel, Linux x86_64, included in the base install |
 | `cosim`       | [cosim](https://github.com/open-simulation-platform/cosim-cli), Open Simulation Platform command-line co-simulator | GitHub releases binary (experimental) |
 
 ## Installation
@@ -88,7 +88,7 @@ Linux x86_64 install already has the known-good 0.3.4 build; elsewhere
 install it by hand:
 
 ```bash
-pip install https://github.com/jkCXf9X4/ssp4sim/releases/download/v0.3.4/pyssp4sim-0.3.4-cp39-abi3-linux_x86_64.whl
+pip install https://github.com/pyssporg/ssp4sim/releases/download/v0.3.4/pyssp4sim-0.3.4-cp39-abi3-linux_x86_64.whl
 ```
 
 The engine is driven by a generated JSON configuration and runs in a
