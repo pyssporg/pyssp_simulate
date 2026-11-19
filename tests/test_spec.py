@@ -153,3 +153,39 @@ def test_spec_summary_reports_engine_fields(tmp_path: Path):
     assert summary["fixed_step"] is False
     assert summary["validate_ssd"] is False
     assert summary["omsimulator_options"] == ["--wallTime=true"]
+
+
+def test_ssp4sim_fields_default(tmp_path: Path):
+    ssp = tmp_path / "model.ssp"
+    ssp.write_bytes(b"")
+    spec = SimulationSpec(ssp=ssp, start_time=0.0, stop_time=1.0)
+    assert spec.realtime is False
+    assert spec.recording_interval is None
+    assert spec.log_fmu is False
+
+
+def test_spec_summary_reports_ssp4sim_fields(tmp_path: Path):
+    ssp = tmp_path / "model.ssp"
+    ssp.write_bytes(b"")
+    spec = SimulationSpec(
+        ssp=ssp,
+        start_time=0.0,
+        stop_time=1.0,
+        realtime=True,
+        recording_interval=0.25,
+        log_fmu=True,
+    )
+    summary = spec_summary(spec)
+    assert summary["realtime"] is True
+    assert summary["recording_interval"] == 0.25
+    assert summary["log_fmu"] is True
+
+
+@pytest.mark.parametrize("value", [0.0, -0.1])
+def test_spec_rejects_bad_recording_interval(tmp_path: Path, value: float):
+    ssp = tmp_path / "model.ssp"
+    ssp.write_bytes(b"")
+    with pytest.raises(ValueError, match="recording_interval"):
+        SimulationSpec(
+            ssp=ssp, start_time=0.0, stop_time=1.0, recording_interval=value
+        )

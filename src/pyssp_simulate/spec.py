@@ -41,10 +41,18 @@ class SimulationSpec:
     :param omsimulator_options: OMSimulator only. Extra engine command-line
         options applied before the run. Empty means "whatever the backend
         already applies".
+    :param realtime: ssp4sim only. Pace the simulation to wall-clock time.
+        Other backends ignore it.
+    :param recording_interval: ssp4sim only. Seconds between recorded CSV
+        samples. ``None`` records every communication step. Other backends
+        ignore it.
+    :param log_fmu: ssp4sim only. Enable FMU-level engine logging. Other
+        backends ignore it.
     :raises FileNotFoundError: if ``ssp`` does not exist.
     :raises ValueError: if ``ssp`` is a directory without a top-level
         ``.ssd`` file, if ``stop_time`` is not greater than ``start_time``,
-        or if ``step_size`` or ``tolerance`` is not positive.
+        or if ``step_size``, ``tolerance``, or ``recording_interval`` is not
+        positive.
     """
 
     ssp: Path
@@ -57,6 +65,9 @@ class SimulationSpec:
     fixed_step: bool = True
     validate_ssd: bool = True
     omsimulator_options: tuple[str, ...] = ()
+    realtime: bool = False
+    recording_interval: float | None = None
+    log_fmu: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "ssp", Path(self.ssp))
@@ -82,6 +93,11 @@ class SimulationSpec:
             raise ValueError(f"step_size must be positive, got {self.step_size}")
         if self.tolerance is not None and self.tolerance <= 0:
             raise ValueError(f"tolerance must be positive, got {self.tolerance}")
+        if self.recording_interval is not None and self.recording_interval <= 0:
+            raise ValueError(
+                "recording_interval must be positive, "
+                f"got {self.recording_interval}"
+            )
 
     @property
     def duration(self) -> float:
@@ -126,4 +142,7 @@ def spec_summary(spec: SimulationSpec) -> dict:
         "fixed_step": spec.fixed_step,
         "validate_ssd": spec.validate_ssd,
         "omsimulator_options": list(spec.omsimulator_options),
+        "realtime": spec.realtime,
+        "recording_interval": spec.recording_interval,
+        "log_fmu": spec.log_fmu,
     }

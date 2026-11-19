@@ -18,6 +18,8 @@ Public API:
   :class:`Simulator` / :class:`BackendNotAvailableError` /
   ``BACKEND_MODULES`` / ``DEFAULT_BACKEND`` -- backend registry.
 * :func:`spec_summary` -- plain-dict view of a spec.
+* :func:`replay_ssp4sim_config` -- run an existing ssp4sim JSON configuration
+  unchanged and normalise the result it wrote.
 
 Measurement and judgment are not part of this package. They live in
 ``pyssp_vv``: ``pyssp_vv.measure`` for trajectory comparison and
@@ -35,6 +37,7 @@ Example::
         print(name, len(result.signals), len(result))
 """
 
+from pyssp_simulate.config_replay import replay_ssp4sim_config
 from pyssp_simulate.interface import (
     BACKEND_MODULES,
     DEFAULT_BACKEND,
@@ -86,6 +89,7 @@ __all__ = [
     "prepare_runtime_ssp",
     "read_dymola_mat",
     "read_result_csv",
+    "replay_ssp4sim_config",
     "run_permutations",
     "simulate",
     "simulate_all",

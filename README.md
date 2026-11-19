@@ -84,11 +84,11 @@ current platforms but can fail on some distributions (for example Ubuntu
 
 ssp4sim is not on PyPI. Its Linux x86_64 wheels are pinned as a direct
 reference in the base dependencies (guarded by a platform marker), so a
-Linux x86_64 install already has the known-good 0.3.4 build; elsewhere
+Linux x86_64 install already has the known-good 0.3.5 build; elsewhere
 install it by hand:
 
 ```bash
-pip install https://github.com/pyssporg/ssp4sim/releases/download/v0.3.4/pyssp4sim-0.3.4-cp39-abi3-linux_x86_64.whl
+pip install https://github.com/pyssporg/ssp4sim/releases/download/v0.3.5/pyssp4sim-0.3.5-cp39-abi3-linux_x86_64.whl
 ```
 
 The engine is driven by a generated JSON configuration and runs in a
@@ -185,6 +185,24 @@ spec = SimulationSpec(ssp="model.ssp", start_time=0.0, stop_time=1.0, step_size=
 result = simulate(spec, backend="fmpy")
 ```
 
+### Replaying an existing ssp4sim config
+
+When a caller already owns an ssp4sim JSON configuration, run that file
+directly instead of building a spec:
+
+```python
+from pyssp_simulate import replay_ssp4sim_config
+
+result = replay_ssp4sim_config("scenario/config.json")
+```
+
+The file is passed to the same engine child unchanged. The result CSV named by
+`simulation.recording.csv.file` (or `simulation.recording.result_file`, falling
+back to `working_dir/result.csv`) is read back into the usual
+`SimulationResult`. Relative `ssp`, `working_dir`, `recording.csv.file`, and
+`log.file` values keep the engine's native meaning: they resolve against the
+process working directory, exactly as when the engine is invoked directly.
+
 ## Results
 
 Every backend returns a `SimulationResult` wrapping a structured NumPy array
@@ -239,6 +257,9 @@ spec = SimulationSpec(
     fixed_step=True,    # OMSimulator: also force setFixedStepSize(step)
     validate_ssd=True,  # FMPy: keep its bundled SSD schema validation
     omsimulator_options=(),  # OMSimulator engine command-line options
+    realtime=False,     # ssp4sim: pace to wall-clock time
+    recording_interval=None,  # ssp4sim: CSV sample interval; None = every step
+    log_fmu=False,      # ssp4sim: enable FMU-level engine logging
 )
 ```
 
@@ -261,6 +282,11 @@ schema validation for the runtime call. `omsimulator_options` are passed to
 OMSimulator's `Capi.setCommandLineOption` before the package is loaded; an
 option the engine rejects raises `RuntimeError`. Backends without the
 corresponding choice ignore these fields.
+
+`realtime`, `recording_interval`, and `log_fmu` are ssp4sim settings threaded
+into its generated JSON. Their defaults reproduce the previous generated
+configuration: no wall-clock pacing, recording every communication step, and no
+FMU logging.
 
 ## Measurement and judgment
 

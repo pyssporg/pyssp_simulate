@@ -39,6 +39,7 @@ from pyssp_simulate import (
     SimulationSpec,
     available_backends,
     backend_names,
+    replay_ssp4sim_config,
     simulate,
     simulate_all,
 )
@@ -58,6 +59,7 @@ from pyssp_simulate.backends.ssp4sim_backend import (
     DIAGNOSTIC_ARTIFACTS,
     SSP4SIM_PATH_ENV,
     SSP4SimSimulator,
+    _config_payload,
 )
 from pyssp_simulate.interface import get_simulator
 from pyssp_simulate.result import read_result_csv
@@ -362,6 +364,49 @@ def test_ssp4sim_uses_unpacked_fmus_and_cleans_diagnostics(
 
 
 @pytest.mark.level_contract
+def test_ssp4sim_config_defaults_match_previous_behaviour(tmp_path: Path):
+    """Opting in is required: the default payload keeps the old values."""
+    ssp = _synthetic_ssp_dir(tmp_path)
+    payload = _config_payload(
+        spec=_ssp4sim_spec(ssp),
+        runtime_root=ssp,
+        ssd_name="SystemStructure.ssd",
+        work_dir=tmp_path,
+        result_file=tmp_path / "result.csv",
+        log_file=tmp_path / "sim.log",
+        step=0.1,
+    )
+
+    simulation = payload["simulation"]
+    assert simulation["realtime"] is False
+    assert simulation["recording"]["interval"] == 0.1
+    assert simulation["recording"]["csv"]["interval"] == 0.1
+    assert simulation["log"]["fmu"] is False
+
+
+@pytest.mark.level_contract
+def test_ssp4sim_config_threads_opt_in_fields(tmp_path: Path):
+    ssp = _synthetic_ssp_dir(tmp_path)
+    payload = _config_payload(
+        spec=_ssp4sim_spec(
+            ssp, realtime=True, recording_interval=0.25, log_fmu=True
+        ),
+        runtime_root=ssp,
+        ssd_name="SystemStructure.ssd",
+        work_dir=tmp_path,
+        result_file=tmp_path / "result.csv",
+        log_file=tmp_path / "sim.log",
+        step=0.1,
+    )
+
+    simulation = payload["simulation"]
+    assert simulation["realtime"] is True
+    assert simulation["recording"]["interval"] == 0.25
+    assert simulation["recording"]["csv"]["interval"] == 0.25
+    assert simulation["log"]["fmu"] is True
+
+
+@pytest.mark.level_contract
 def test_ssp4sim_requires_an_explicit_tolerance(tmp_path: Path):
     """No silent default: the engine requires the key, so the caller must pass it."""
     ssp = _synthetic_ssp_dir(tmp_path)
@@ -376,6 +421,54 @@ def _ssp4sim_spec(ssp: Path, **kwargs) -> SimulationSpec:
     return SimulationSpec(
         ssp=ssp, start_time=0.0, stop_time=1.0, step_size=0.1, tolerance=1e-3, **kwargs
     )
+
+
+@pytest.mark.level_contract
+def test_replay_ssp4sim_config_runs_the_file_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The config is passed through byte-for-byte and its result normalised."""
+    ssp = _synthetic_ssp_dir(tmp_path)
+    config = {
+        "simulation": {
+            "ssp": ssp.name,
+            "ssd": "SystemStructure.ssd",
+            "start_time": 0.0,
+            "stop_time": 1.0,
+            "timestep": 0.1,
+            "tolerance": 1e-3,
+            "working_dir": "work",
+            "recording": {
+                "csv": {"enable": True, "file": "work/out.csv", "interval": 0.1}
+            },
+            "log": {"file": "work/sim.log", "fmu": True},
+        }
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config, indent=2))
+    original = config_path.read_bytes()
+    monkeypatch.chdir(tmp_path)
+
+    observed: dict = {}
+
+    def fake_run(command, capture_output=True, text=True, timeout=None, env=None):
+        observed["argv"] = command
+        observed["config"] = Path(command[-1])
+        result = Path(config["simulation"]["recording"]["csv"]["file"])
+        result.parent.mkdir(parents=True, exist_ok=True)
+        result.write_text("time,Synthetic.system.Source.y\n0.0,0.0\n1.0,1.0\n")
+        Path("work/sim.log").write_text("log")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(ssp4sim_backend.subprocess, "run", fake_run)
+
+    result = replay_ssp4sim_config(config_path)
+
+    assert config_path.read_bytes() == original
+    assert observed["config"] == config_path
+    assert result.backend == "ssp4sim"
+    assert result.signals == ("Source.y",)
+    assert config_path in result.artifacts
 
 
 def _fake_engine_package(tmp_path: Path, package: str) -> Path:

@@ -6,7 +6,7 @@ PyPI, so the wheel is pinned as a direct reference in this package's base
 dependencies, guarded by a platform marker because only Linux x86_64 is
 published:
 
-    pyssp4sim @ https://github.com/pyssporg/ssp4sim/releases/download/v0.3.4/pyssp4sim-0.3.4-cp39-abi3-linux_x86_64.whl
+    pyssp4sim @ https://github.com/pyssporg/ssp4sim/releases/download/v0.3.5/pyssp4sim-0.3.5-cp39-abi3-linux_x86_64.whl
 
 The engine is driven by a JSON configuration file and is executed in a
 child process for two reasons: it does not reliably return control to
@@ -128,32 +128,11 @@ class SSP4SimSimulator(Simulator):
                 )
                 config_path.write_text(json.dumps(config, indent=2))
 
-                start = time.perf_counter()
-                # Run as a bare script (not ``python -m``): the child must
-                # import pyssp4sim before anything loads a dynamic libstdc++
-                # (see the module docstring).
-                try:
-                    process = subprocess.run(
-                        [sys.executable, str(_CHILD_SCRIPT), str(config_path)],
-                        capture_output=True,
-                        text=True,
-                        timeout=self.timeout,
-                        env=_child_environment(),
-                    )
-                except subprocess.TimeoutExpired as error:
-                    raise TimeoutError(
-                        f"ssp4sim did not finish within {self.timeout} s"
-                    ) from error
-                runtime_s = time.perf_counter() - start
+                runtime_s = _execute_config(config_path, self.timeout)
 
                 for name in DIAGNOSTIC_ARTIFACTS:
                     (work / name).unlink(missing_ok=True)
 
-                if process.returncode != 0:
-                    raise RuntimeError(
-                        f"ssp4sim failed with exit code {process.returncode}:\n"
-                        f"{process.stderr.strip()}"
-                    )
                 if not result_path.is_file():
                     raise RuntimeError(
                         f"ssp4sim did not produce a result file at {result_path}"
@@ -170,6 +149,40 @@ class SSP4SimSimulator(Simulator):
         if spec.result_file is not None:
             result.write_csv(spec.result_file)
         return result
+
+
+def _execute_config(config_path: Path, timeout: float) -> float:
+    """Run the engine child against ``config_path`` and return runtime seconds.
+
+    The child inherits the current working directory, so relative paths in
+    the configuration resolve exactly as they do when the engine is invoked
+    directly.
+
+    :raises TimeoutError: when the child does not finish within ``timeout``.
+    :raises RuntimeError: when the child exits non-zero.
+    """
+    start = time.perf_counter()
+    # Run as a bare script (not ``python -m``): the child must import
+    # pyssp4sim before anything loads a dynamic libstdc++ (see the module
+    # docstring).
+    try:
+        process = subprocess.run(
+            [sys.executable, str(_CHILD_SCRIPT), str(config_path)],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=_child_environment(),
+        )
+    except subprocess.TimeoutExpired as error:
+        raise TimeoutError(f"ssp4sim did not finish within {timeout} s") from error
+    runtime_s = time.perf_counter() - start
+
+    if process.returncode != 0:
+        raise RuntimeError(
+            f"ssp4sim failed with exit code {process.returncode}:\n"
+            f"{process.stderr.strip()}"
+        )
+    return runtime_s
 
 
 def _child_environment() -> dict[str, str] | None:
@@ -201,6 +214,9 @@ def _config_payload(
     step: float,
 ) -> dict:
     """Build the ssp4sim simulation configuration (its own JSON schema)."""
+    recording_interval = (
+        spec.recording_interval if spec.recording_interval is not None else step
+    )
     simulation = {
         "ssp": str(runtime_root),
         "ssd": ssd_name,
@@ -208,7 +224,7 @@ def _config_payload(
         "stop_time": spec.stop_time,
         "timestep": step,
         "tolerance": spec.tolerance,
-        "realtime": False,
+        "realtime": spec.realtime,
         "working_dir": str(work_dir),
         "executor": {
             "method": "jacobi",
@@ -221,12 +237,12 @@ def _config_payload(
         "recording": {
             "enable": True,
             "wait_for": True,
-            "interval": step,
+            "interval": recording_interval,
             "result_file": str(result_file),
             "csv": {
                 "enable": True,
                 "file": str(result_file),
-                "interval": step,
+                "interval": recording_interval,
             },
             "influx": {"enable": False},
         },
@@ -236,7 +252,7 @@ def _config_payload(
             "level_file": "info",
             "level_json": "disable",
             "level_cutelog": "disable",
-            "fmu": False,
+            "fmu": spec.log_fmu,
         },
     }
     return {"simulation": simulation}

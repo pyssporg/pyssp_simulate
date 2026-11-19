@@ -49,11 +49,19 @@ def read_container_names(ssd_path: Path) -> tuple[str, ...]:
     empty tuple.
     """
     try:
-        tree = ET.parse(ssd_path)
+        data = ssd_path.read_bytes()
+    except OSError:
+        return ()
+    return read_container_names_from_bytes(data)
+
+
+def read_container_names_from_bytes(data: bytes) -> tuple[str, ...]:
+    """Like :func:`read_container_names`, for SSD content already in memory."""
+    try:
+        root = ET.fromstring(data)
     except ET.ParseError:
         return ()
     names: list[str] = []
-    root = tree.getroot()
     if root.get("name"):
         names.append(root.get("name"))
     for element in root.iter():
