@@ -48,7 +48,7 @@ dependencies = [
 dev = [
     "pytest>=7",
     "ruff",
-    "experimental-pyssp-standard @ https://github.com/pyssporg/experimental_pyssp_standard/releases/download/v0.9.3.dev0/experimental_pyssp_standard-0.9.3.dev0-py3-none-any.whl",
+    "experimental-pyssp-standard @ https://github.com/pyssporg/experimental_pyssp_standard/releases/download/v0.9.4.dev0/experimental_pyssp_standard-0.9.4.dev0-py3-none-any.whl",
     "pyssp-vv @ https://github.com/pyssporg/pyssp_vv/releases/download/v0.2.0/pyssp_vv-0.2.0-py3-none-any.whl",
     "scipy",
 ]
