@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import shutil
 import tempfile
-import xml.etree.ElementTree as ET
-import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+
+from pyssp_standard import SSD, package_archive, unpack_archive
 
 
 @dataclass(frozen=True)
@@ -43,10 +43,10 @@ def read_container_names(ssd_path: Path) -> tuple[str, ...]:
 
     Engines prefix result column names with these container levels; for
     example OMSimulator 3.0.0.post198 and newer write
-    ``<ssd>.<system>.<component>.<signal>``. Uses a plain XML parse (no
-    schema validation) so exotic but valid SSD files still work. Names
-    are deduplicated in document order; an unreadable SSD yields an
-    empty tuple.
+    ``<ssd>.<system>.<component>.<signal>``. Parsing goes through the
+    ``pyssp_standard`` SSD facade without schema validation; a document the
+    facade cannot hydrate yields an empty tuple. Names are deduplicated in
+    document order.
     """
     try:
         data = ssd_path.read_bytes()
@@ -55,27 +55,37 @@ def read_container_names(ssd_path: Path) -> tuple[str, ...]:
     return read_container_names_from_bytes(data)
 
 
+def _append_system_names(system, names: list[str]) -> None:
+    """Append ``system`` and its nested systems in document order."""
+    if system is None:
+        return
+    if system.name:
+        names.append(system.name)
+    for element in getattr(system, "elements", ()):
+        if hasattr(element, "elements"):
+            _append_system_names(element, names)
+
+
 def read_container_names_from_bytes(data: bytes) -> tuple[str, ...]:
     """Like :func:`read_container_names`, for SSD content already in memory."""
     try:
-        root = ET.fromstring(data)
-    except ET.ParseError:
+        document = SSD(Path("SystemStructure.ssd"))
+        document.from_xml(data.decode("utf-8-sig"))
+    except (SyntaxError, KeyError, UnicodeDecodeError, ValueError):
         return ()
     names: list[str] = []
-    if root.get("name"):
-        names.append(root.get("name"))
-    for element in root.iter():
-        if element.tag.rsplit("}", 1)[-1] == "System" and element.get("name"):
-            names.append(element.get("name"))
+    if document.xml.name:
+        names.append(document.xml.name)
+    _append_system_names(document.xml.system, names)
     return tuple(dict.fromkeys(names))
 
 
 def package_fmu_dir(fmu_dir: Path, fmu_path: Path) -> None:
     """Zip an unpacked FMU directory into an ``.fmu`` archive."""
-    with zipfile.ZipFile(fmu_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(fmu_dir.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(fmu_dir))
+    # ``fixed_timestamp=None`` keeps the filesystem mtimes the previous
+    # ``ZipFile.write`` path used; only the member order and compression are
+    # pinned by the archive contract.
+    package_archive(fmu_dir, fmu_path, fixed_timestamp=None)
 
 
 def repackage_unpacked_fmus(root: Path) -> list[Path]:
@@ -116,10 +126,7 @@ def find_ssd(root: Path) -> Path | None:
 
 
 def _zip_tree(root: Path, archive_path: Path) -> None:
-    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(root.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(root))
+    package_archive(root, archive_path, fixed_timestamp=None)
 
 
 @contextmanager
@@ -153,8 +160,7 @@ def prepare_runtime_ssp(
             archive = work / "runtime.ssp"
             shutil.copy2(source, archive)
             root = work / "ssp"
-            with zipfile.ZipFile(source) as zip_file:
-                zip_file.extractall(root)
+            unpack_archive(archive, root)
         else:
             root = work / "ssp"
             shutil.copytree(source, root)

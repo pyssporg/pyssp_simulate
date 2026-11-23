@@ -43,7 +43,8 @@ or from a checkout:
 pip install .
 ```
 
-The base install ships FMPy, OMSimulator, numpy, scipy, and `pyssp-vv`. FMPy
+The base install ships FMPy, OMSimulator, numpy, scipy, `pyssp-vv`, and
+`pyssp_standard`. FMPy
 installs reliably from PyPI on every platform.
 FMPy's SSP support is intentionally simple: it records the values of the
 connectors declared in the SSD, simulates FMUs with a fixed-step Jacobi scheme,

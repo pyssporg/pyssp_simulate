@@ -12,8 +12,11 @@ from pyssp_simulate.runtime import (
     package_fmu_dir,
     prepare_runtime_ssp,
     read_container_names,
+    read_container_names_from_bytes,
     repackage_unpacked_fmus,
 )
+
+SSD_NS = "http://ssp-standard.org/SSP1/SystemStructureDescription"
 
 
 def make_fmu_dir(parent: Path, name: str = "TestFMU") -> Path:
@@ -29,7 +32,7 @@ class TestReadContainerNames:
         ssd = tmp_path / "SystemStructure.ssd"
         ssd.write_text(
             '<?xml version="1.0"?>'
-            '<ssd:SystemStructureDescription xmlns:ssd="http://ssp-standard.org/SSP1"'
+            f'<ssd:SystemStructureDescription xmlns:ssd="{SSD_NS}"'
             ' name="doc" version="1.0">'
             '<ssd:System name="mysystem"/>'
             "</ssd:SystemStructureDescription>"
@@ -40,7 +43,7 @@ class TestReadContainerNames:
         ssd = tmp_path / "SystemStructure.ssd"
         ssd.write_text(
             '<?xml version="1.0"?>'
-            '<ssd:SystemStructureDescription xmlns:ssd="http://ssp-standard.org/SSP1"'
+            f'<ssd:SystemStructureDescription xmlns:ssd="{SSD_NS}"'
             ' name="doc" version="1.0">'
             '<ssd:System name="outer">'
             '<ssd:Elements><ssd:System name="inner"/></ssd:Elements>'
@@ -49,16 +52,27 @@ class TestReadContainerNames:
         )
         assert read_container_names(ssd) == ("doc", "outer", "inner")
 
-    def test_unnamed_levels_are_skipped(self, tmp_path: Path):
+    def test_bytes_reader_matches_the_path_reader(self, tmp_path: Path):
         ssd = tmp_path / "SystemStructure.ssd"
         ssd.write_text(
             '<?xml version="1.0"?>'
-            '<ssd:SystemStructureDescription xmlns:ssd="http://ssp-standard.org/SSP1"'
+            f'<ssd:SystemStructureDescription xmlns:ssd="{SSD_NS}"'
+            ' name="doc" version="1.0">'
+            '<ssd:System name="mysystem"/>'
+            "</ssd:SystemStructureDescription>"
+        )
+        assert read_container_names_from_bytes(ssd.read_bytes()) == ("doc", "mysystem")
+
+    def test_missing_required_root_name_returns_empty_tuple(self, tmp_path: Path):
+        ssd = tmp_path / "SystemStructure.ssd"
+        ssd.write_text(
+            '<?xml version="1.0"?>'
+            f'<ssd:SystemStructureDescription xmlns:ssd="{SSD_NS}"'
             ' version="1.0">'
             '<ssd:System name="mysystem"/>'
             "</ssd:SystemStructureDescription>"
         )
-        assert read_container_names(ssd) == ("mysystem",)
+        assert read_container_names(ssd) == ()
 
     def test_invalid_xml_returns_empty_tuple(self, tmp_path: Path):
         ssd = tmp_path / "broken.ssd"
@@ -97,6 +111,10 @@ class TestRepackagedFmus:
         package_fmu_dir(fmu_dir, second)
         with zipfile.ZipFile(first) as a, zipfile.ZipFile(second) as b:
             assert a.namelist() == b.namelist()
+            # Member order and compression are part of the archive contract.
+            assert [(info.filename, info.compress_type, info.CRC) for info in a.infolist()] == [
+                (info.filename, info.compress_type, info.CRC) for info in b.infolist()
+            ]
 
 
 class TestFindSsd:

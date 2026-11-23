@@ -24,6 +24,11 @@ runtime preparation ──► backend adapter ──► SimulationResult
 ## Boundaries
 
 - `pyssp_simulate` consumes and produces standard SSP and result CSV files.
+- Runtime preparation owns path normalization and simulation prep only. SSD
+  container names come from the `pyssp_standard` `SSD` facade; SSP trees and
+  nested FMUs are unpacked and repackaged through `unpack_archive` and
+  `package_archive`. Runtime preparation keeps no XML parse or zip write of its
+  own.
 - A consumer receives only the public API: `SimulationSpec`,
   `SimulationResult`, `RuntimeSSP`, `PermutationConfig`, and the backend
   registry.
