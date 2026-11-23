@@ -20,7 +20,7 @@ Supported backends:
 
 ## Installation
 
-Requires Python 3.10+.
+Requires Python 3.11+.
 
 pyssp_simulate is not yet published on PyPI; install the wheel from a
 [GitHub release](https://github.com/pyssporg/pyssp_simulate/releases) — no
@@ -40,7 +40,8 @@ pip install git+https://github.com/pyssporg/pyssp_simulate.git
 or from a checkout:
 
 ```bash
-pip install .
+pip install .            # regular install
+pip install -e ".[dev]"  # editable, with the test tools
 ```
 
 The base install ships FMPy, OMSimulator, numpy, scipy, `pyssp-vv`, and
@@ -172,8 +173,8 @@ for name, result in results.items():
 ```
 
 `simulate_all` runs every registered backend whose engine is installed and
-emits a `RuntimeWarning` for each one it has to skip, so a base install (FMPy
-only) yields a single result. Each result is a `SimulationResult` with a shared
+emits a `RuntimeWarning` for each one it has to skip, so an install where only
+FMPy is available yields a single result. Each result is a `SimulationResult` with a shared
 time base and canonical `<component>.<signal>` names, ready to be handed to
 `pyssp_vv.measure`.
 
@@ -400,7 +401,7 @@ an integrator (`der(y) = u`) wired together — compiled at test time by the
 [OpenModelica](https://openmodelica.org) compiler, so no prebuilt binaries
 live in the repository. The analytic solutions (`t` and `t²/2`) give the
 tests an engine-independent reference. The fixture SSP is assembled with
-pyssp_standard (a dev dependency). If `omc` is not on your `PATH`, the
+pyssp_standard (a base dependency). If `omc` is not on your `PATH`, the
 integration tests skip; to prepare the FMUs once and reuse them:
 
 ```bash
