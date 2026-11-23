@@ -99,10 +99,11 @@ def read_result_csv(
     root_system: str | Sequence[str] | None = None,
     *,
     prefix: str | None = None,
+    non_numeric: str = "raise",
 ) -> np.ndarray:
     """Read a numeric result CSV into a structured array.
 
-    The first row must be the header; all values are parsed as floats.
+    The first row must be the header; values are parsed as floats.
     Header names are canonicalized with :func:`canonicalize_signal`, and
     fields come back in canonical order (``"time"`` first, then sorted).
 
@@ -112,9 +113,18 @@ def read_result_csv(
         system names (OMSimulator does). Accepts one name or a sequence.
     :param prefix: exact leading text to strip before canonicalization, for
         reference CSVs such as ``default.BouncingBall.h``.
-    :raises ValueError: if the file is empty, has ragged rows, or has
-        duplicate columns after canonicalization.
+    :param non_numeric: what to do with a column whose cells are not all
+        numeric. ``"raise"`` (default) rejects it; ``"drop"`` omits the
+        column, for engine output that also records String variables.
+    :raises ValueError: if the file is empty, has ragged rows, has duplicate
+        columns after canonicalization, or has a non-numeric column while
+        ``non_numeric="raise"``.
     """
+
+    if non_numeric not in ("raise", "drop"):
+        raise ValueError(
+            f"non_numeric must be 'raise' or 'drop', got {non_numeric!r}"
+        )
     path = Path(path)
     with path.open(newline="") as handle:
         reader = csv.reader(handle)
@@ -145,15 +155,21 @@ def read_result_csv(
     if not rows:
         return array_from_columns({name: np.array([], dtype=np.float64) for name in header})
 
-    values = np.array([[float(cell) for cell in row] for row in rows], dtype=np.float64)
-    if values.shape[1] != len(raw_header):
+    if any(len(row) != len(raw_header) for row in rows):
         raise ValueError(f"Ragged rows in result CSV {path}")
-    return array_from_columns(
-        {
-            name: values[:, source_index]
-            for name, source_index in zip(header, column_indices)
-        }
-    )
+
+    columns = {}
+    for name, source_index in zip(header, column_indices):
+        cells = [row[source_index] for row in rows]
+        try:
+            columns[name] = np.array([float(cell) for cell in cells], dtype=np.float64)
+        except ValueError:
+            if non_numeric == "drop":
+                continue
+            raise ValueError(
+                f"Non-numeric value in column {name!r} of result CSV {path}"
+            ) from None
+    return array_from_columns(columns)
 
 
 def read_dymola_mat(path: Path | str) -> np.ndarray:

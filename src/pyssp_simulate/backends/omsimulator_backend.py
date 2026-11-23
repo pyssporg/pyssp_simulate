@@ -117,7 +117,9 @@ class OMSimulatorSimulator(Simulator):
                     raise RuntimeError(
                         f"OMSimulator did not produce a result file at {result_path}"
                     )
-                data = read_result_csv(result_path, root_system=runtime.container_names)
+                data = read_result_csv(
+                    result_path, root_system=runtime.container_names, non_numeric="drop"
+                )
 
         result = SimulationResult(
             data=data,

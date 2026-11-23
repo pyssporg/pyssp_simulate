@@ -77,7 +77,7 @@ def replay_ssp4sim_config(
             f"ssp4sim did not produce a result file at {result_path}"
         )
     data = read_result_csv(
-        result_path, root_system=_container_names(simulation)
+        result_path, root_system=_container_names(simulation), non_numeric="drop"
     )
 
     artifacts = (path,)

@@ -129,6 +129,19 @@ class TestCsvRoundTrip:
         with pytest.raises(ValueError, match="Duplicate"):
             read_result_csv(path)
 
+    def test_read_non_numeric_column_raises(self, tmp_path: Path):
+        path = tmp_path / "strings.csv"
+        path.write_text("time,label\n0.0,abc\n")
+        with pytest.raises(ValueError, match="Non-numeric"):
+            read_result_csv(path)
+
+    def test_read_drops_non_numeric_columns(self, tmp_path: Path):
+        path = tmp_path / "strings.csv"
+        path.write_text("time,label,x\n0.0,abc,1.5\n0.1,def,2.5\n")
+        loaded = read_result_csv(path, non_numeric="drop")
+        assert loaded.dtype.names == ("time", "x")
+        np.testing.assert_allclose(loaded["x"], [1.5, 2.5])
+
 
 class TestSimulationResult:
     def make_result(self) -> SimulationResult:
