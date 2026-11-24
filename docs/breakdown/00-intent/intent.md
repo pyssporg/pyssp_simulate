@@ -22,7 +22,7 @@ and result shape; it does not own measurement or judgment.
 | engine adapters and backend registry | metrics and criteria (`pyssp_vv`) |
 | SSP runtime preparation | SSP XML and archive editing (`pyssp_standard`) |
 | normalized result CSV and `SimulationResult` | workflow scheduling (`pyssp_workflow`) |
-| permutation runs over simulation specs | SysML generation (`pyssp_sysml2`) |
+| permutation runs over simulation specs | SysML generation (`pyssp_sysml`) |
 
 ## Commitments
 
