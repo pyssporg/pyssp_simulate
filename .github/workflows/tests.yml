@@ -4,6 +4,9 @@
 # engine binaries at install time and can fail depending on the runner
 # distro. The test suite skips unavailable backends automatically
 # (see tests/test_backends.py), so a failed install must not fail the job.
+# The version is pinned to the one the committed engine recording was taken
+# with: the runner image preinstalls a newer nightly whose result header has
+# extra internal derivative columns, which the recorded header check rejects.
 # ssp4sim (unstable wheels) and cosim (not pip-installable) are not
 # installed at all; their tests skip themselves too.
 #
@@ -43,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -55,7 +58,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: Try to install OMSimulator (optional backend)
-        run: pip install "OMSimulator>=3.0.0.post115" || echo "::warning::OMSimulator install failed; its tests will be skipped"
+        run: pip install "OMSimulator==3.0.0.post115" || echo "::warning::OMSimulator install failed; its tests will be skipped"
       - name: Install OpenModelica (compiles the test FMUs)
         # Official instructions from https://openmodelica.org/download/download-linux.
         # omc without recommends is enough: the tests only run the compiler.

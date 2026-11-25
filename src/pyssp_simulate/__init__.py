@@ -67,7 +67,7 @@ from pyssp_simulate.result import (
 from pyssp_simulate.runtime import RuntimeSSP, prepare_runtime_ssp
 from pyssp_simulate.spec import SimulationSpec, spec_summary
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "BACKEND_MODULES",

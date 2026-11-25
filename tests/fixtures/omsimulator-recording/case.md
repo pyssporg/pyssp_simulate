@@ -23,7 +23,8 @@ exists, what oracle proves it, and how the output may be normalized.
 - **Update policy:** re-record by hand when the engine version or the fixture
   naming changes, review the diff, and update the record below; never
   auto-update
-- **Notes:** recorded with OMSimulator 3.0.0 (`OMSimulator` Python package),
+- **Notes:** recorded with OMSimulator 3.0.0 (distribution
+  `OMSimulator==3.0.0.post115`, the version pinned by the tests workflow),
   `start_time=0.0`, `stop_time=1.0`, `step_size=0.001`,
   `omsimulator_options=("--emitEvents=false",)`, SSD name `RampToIntegrator`,
   system name `system`. Capture: run the backend with a persistent
